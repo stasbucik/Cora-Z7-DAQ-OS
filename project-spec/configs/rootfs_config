@@ -3769,8 +3769,9 @@ CONFIG_Init-manager-systemd=y
 #
 # user packages 
 #
-# CONFIG_gpio-demo is not set
-# CONFIG_peekpoke is not set
+CONFIG_gpio-demo=y
+CONFIG_nano=y
+CONFIG_peekpoke=y
 CONFIG_test-scripts=y
 
 #

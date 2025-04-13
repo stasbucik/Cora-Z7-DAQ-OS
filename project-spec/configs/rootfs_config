@@ -504,7 +504,7 @@ CONFIG_can-utils=y
 #
 # nfs-utils 
 #
-CONFIG_nfs-utils=y
+# CONFIG_nfs-utils is not set
 # CONFIG_nfs-utils-dev is not set
 # CONFIG_nfs-utils-client is not set
 # CONFIG_nfs-utils-stats is not set
@@ -3315,7 +3315,7 @@ CONFIG_bridge-utils=y
 #
 # dosfstools 
 #
-CONFIG_dosfstools=y
+# CONFIG_dosfstools is not set
 # CONFIG_dosfstools-dev is not set
 # CONFIG_dosfstools-dbg is not set
 
@@ -3757,7 +3757,7 @@ CONFIG_u-boot-tools=y
 # Image Features
 #
 # CONFIG_imagefeature-ssh-server-dropbear is not set
-CONFIG_imagefeature-ssh-server-openssh=y
+# CONFIG_imagefeature-ssh-server-openssh is not set
 CONFIG_imagefeature-hwcodecs=y
 # CONFIG_imagefeature-package-management is not set
 # CONFIG_imagefeature-debug-tweaks is not set

@@ -8,5 +8,9 @@ pre-built/linux/
 *.o
 *.jou
 *.log
+*.log.old
 /components/plnx_workspace
 /components/yocto
+project-spec/configs/configs/*
+project-spec/configs/rootfsconfigs/*
+project-spec/configs/.statistics

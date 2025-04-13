@@ -3763,8 +3763,8 @@ CONFIG_imagefeature-hwcodecs=y
 # CONFIG_imagefeature-debug-tweaks is not set
 # CONFIG_imagefeature-empty-root-password is not set
 # CONFIG_imagefeature-serial-autologin-root is not set
-# CONFIG_Init-manager-systemd is not set
-CONFIG_Init-manager-sysvinit=y
+CONFIG_Init-manager-systemd=y
+# CONFIG_Init-manager-sysvinit is not set
 
 #
 # user packages 

@@ -15,3 +15,5 @@ project-spec/configs/configs/*
 project-spec/configs/rootfsconfigs/*
 project-spec/configs/.statistics
 project-spec/configs/system-top.dts.pp
+petalinux-sdimage.wic.xz
+.vscode/

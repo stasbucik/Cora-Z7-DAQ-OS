@@ -13,6 +13,9 @@ ps7_afi_2:
 ps7_afi_3:
 - ps7_afi
 - None
+ps7_coresight_comp_0:
+- ps7_coresight_comp
+- coresightps_dcc
 ps7_ddrc_0:
 - ps7_ddrc
 - None
@@ -25,6 +28,9 @@ ps7_dma_ns:
 ps7_dma_s:
 - ps7_dma
 - dmaps
+ps7_ethernet_0:
+- ps7_ethernet
+- emacps
 ps7_globaltimer_0:
 - ps7_globaltimer
 - None
@@ -34,6 +40,9 @@ ps7_gpio_0:
 ps7_gpv_0:
 - ps7_gpv
 - None
+ps7_i2c_0:
+- ps7_i2c
+- iicps
 ps7_intc_dist_0:
 - ps7_intc_dist
 - scugic
@@ -58,9 +67,21 @@ ps7_scutimer_0:
 ps7_scuwdt_0:
 - ps7_scuwdt
 - scuwdt
+ps7_sd_0:
+- ps7_sdio
+- sdps
 ps7_slcr_0:
 - ps7_slcr
 - None
+ps7_spi_0:
+- ps7_spi
+- spips
+ps7_uart_0:
+- ps7_uart
+- uartps
+ps7_usb_0:
+- ps7_usb
+- usbps
 ps7_xadc_0:
 - ps7_xadc
 - xadcps

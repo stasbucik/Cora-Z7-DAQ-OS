@@ -1,4 +1,3 @@
-#include "zynq-7000.dtsi"
 #include "include/dt-bindings/gpio/gpio.h"
 
 / {

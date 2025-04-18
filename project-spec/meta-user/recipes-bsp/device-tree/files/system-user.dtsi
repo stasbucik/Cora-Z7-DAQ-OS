@@ -1,9 +1,9 @@
 /include/ "system-conf.dtsi"
 / {
-    daqintr: daq-intr@46000000 {
-		compatible = "stasbucik,daq-intr";
+    daq: daq@46000000 {
+		compatible = "stasbucik,daqdrv";
 		reg = <0x46000000 0x20000>;
 		interrupt-parent = <&intc>;
-		interrupts = <0 29 1>;
+		interrupts = <0 61 1>;
 	};
 };

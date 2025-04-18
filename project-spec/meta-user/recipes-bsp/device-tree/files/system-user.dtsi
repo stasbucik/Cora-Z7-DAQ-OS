@@ -4,6 +4,7 @@
 		compatible = "stasbucik,daqdrv";
 		reg = <0x46000000 0x20000>;
 		interrupt-parent = <&intc>;
-		interrupts = <0 61 1>;
+		// 61 - 32 = 29
+		interrupts = <0 29 1>;
 	};
 };

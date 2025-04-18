@@ -6,4 +6,3 @@ CONFIG_peekpoke
 CONFIG_test-scripts
 
 CONFIG_nano
-CONFIG_daq-intr

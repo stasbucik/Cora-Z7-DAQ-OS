@@ -12,7 +12,7 @@
 <MemInfo Version="1" Minor="9">
   <MemoryArray InstPath="u_DataBuffer/u_BramWrapper1/u_xpm_memory_sdpram/xpm_memory_base_inst" MemoryPrimitive="block" MemoryConfiguration="enabled_configuration">
     <MemoryLayout Name="u_DataBuffer/u_BramWrapper1/u_xpm_memory_sdpram/xpm_memory_base_inst" CoreMemory_Width="24" MemoryType="RAM_SDP">
-      <BRAM MemType="RAMB36" Placement="X0Y5" Read_Width_A="4" Read_Width_B="4" SLR_INDEX="0">
+      <BRAM MemType="RAMB36" Placement="X1Y6" Read_Width_A="4" Read_Width_B="4" SLR_INDEX="0">
         <DataWidth_PortA MSB="3" LSB="0"/>
         <AddressRange_PortA Begin="0" End="8191"/>
         <BitLayout_PortA pattern="p0_d4"/>
@@ -21,7 +21,7 @@
         <BitLayout_PortB pattern="p0_d4"/>
         <Parity ON="false" NumBits="0"/>
       </BRAM>
-      <BRAM MemType="RAMB36" Placement="X1Y4" Read_Width_A="4" Read_Width_B="4" SLR_INDEX="0">
+      <BRAM MemType="RAMB36" Placement="X1Y8" Read_Width_A="4" Read_Width_B="4" SLR_INDEX="0">
         <DataWidth_PortA MSB="7" LSB="4"/>
         <AddressRange_PortA Begin="0" End="8191"/>
         <BitLayout_PortA pattern="p0_d4"/>
@@ -30,7 +30,65 @@
         <BitLayout_PortB pattern="p0_d4"/>
         <Parity ON="false" NumBits="0"/>
       </BRAM>
-      <BRAM MemType="RAMB36" Placement="X2Y5" Read_Width_A="4" Read_Width_B="4" SLR_INDEX="0">
+      <BRAM MemType="RAMB36" Placement="X1Y10" Read_Width_A="4" Read_Width_B="4" SLR_INDEX="0">
+        <DataWidth_PortA MSB="11" LSB="8"/>
+        <AddressRange_PortA Begin="0" End="8191"/>
+        <BitLayout_PortA pattern="p0_d4"/>
+        <DataWidth_PortB MSB="11" LSB="8"/>
+        <AddressRange_PortB Begin="0" End="8191"/>
+        <BitLayout_PortB pattern="p0_d4"/>
+        <Parity ON="false" NumBits="0"/>
+      </BRAM>
+      <BRAM MemType="RAMB36" Placement="X1Y11" Read_Width_A="4" Read_Width_B="4" SLR_INDEX="0">
+        <DataWidth_PortA MSB="15" LSB="12"/>
+        <AddressRange_PortA Begin="0" End="8191"/>
+        <BitLayout_PortA pattern="p0_d4"/>
+        <DataWidth_PortB MSB="15" LSB="12"/>
+        <AddressRange_PortB Begin="0" End="8191"/>
+        <BitLayout_PortB pattern="p0_d4"/>
+        <Parity ON="false" NumBits="0"/>
+      </BRAM>
+      <BRAM MemType="RAMB36" Placement="X2Y8" Read_Width_A="4" Read_Width_B="4" SLR_INDEX="0">
+        <DataWidth_PortA MSB="19" LSB="16"/>
+        <AddressRange_PortA Begin="0" End="8191"/>
+        <BitLayout_PortA pattern="p0_d4"/>
+        <DataWidth_PortB MSB="19" LSB="16"/>
+        <AddressRange_PortB Begin="0" End="8191"/>
+        <BitLayout_PortB pattern="p0_d4"/>
+        <Parity ON="false" NumBits="0"/>
+      </BRAM>
+      <BRAM MemType="RAMB36" Placement="X1Y9" Read_Width_A="4" Read_Width_B="4" SLR_INDEX="0">
+        <DataWidth_PortA MSB="23" LSB="20"/>
+        <AddressRange_PortA Begin="0" End="8191"/>
+        <BitLayout_PortA pattern="p0_d4"/>
+        <DataWidth_PortB MSB="23" LSB="20"/>
+        <AddressRange_PortB Begin="0" End="8191"/>
+        <BitLayout_PortB pattern="p0_d4"/>
+        <Parity ON="false" NumBits="0"/>
+      </BRAM>
+    </MemoryLayout>
+  </MemoryArray>
+  <MemoryArray InstPath="u_DataBuffer/u_BramWrapper0/u_xpm_memory_sdpram/xpm_memory_base_inst" MemoryPrimitive="block" MemoryConfiguration="enabled_configuration">
+    <MemoryLayout Name="u_DataBuffer/u_BramWrapper0/u_xpm_memory_sdpram/xpm_memory_base_inst" CoreMemory_Width="24" MemoryType="RAM_SDP">
+      <BRAM MemType="RAMB36" Placement="X0Y7" Read_Width_A="4" Read_Width_B="4" SLR_INDEX="0">
+        <DataWidth_PortA MSB="3" LSB="0"/>
+        <AddressRange_PortA Begin="0" End="8191"/>
+        <BitLayout_PortA pattern="p0_d4"/>
+        <DataWidth_PortB MSB="3" LSB="0"/>
+        <AddressRange_PortB Begin="0" End="8191"/>
+        <BitLayout_PortB pattern="p0_d4"/>
+        <Parity ON="false" NumBits="0"/>
+      </BRAM>
+      <BRAM MemType="RAMB36" Placement="X0Y10" Read_Width_A="4" Read_Width_B="4" SLR_INDEX="0">
+        <DataWidth_PortA MSB="7" LSB="4"/>
+        <AddressRange_PortA Begin="0" End="8191"/>
+        <BitLayout_PortA pattern="p0_d4"/>
+        <DataWidth_PortB MSB="7" LSB="4"/>
+        <AddressRange_PortB Begin="0" End="8191"/>
+        <BitLayout_PortB pattern="p0_d4"/>
+        <Parity ON="false" NumBits="0"/>
+      </BRAM>
+      <BRAM MemType="RAMB36" Placement="X0Y9" Read_Width_A="4" Read_Width_B="4" SLR_INDEX="0">
         <DataWidth_PortA MSB="11" LSB="8"/>
         <AddressRange_PortA Begin="0" End="8191"/>
         <BitLayout_PortA pattern="p0_d4"/>
@@ -48,65 +106,7 @@
         <BitLayout_PortB pattern="p0_d4"/>
         <Parity ON="false" NumBits="0"/>
       </BRAM>
-      <BRAM MemType="RAMB36" Placement="X1Y8" Read_Width_A="4" Read_Width_B="4" SLR_INDEX="0">
-        <DataWidth_PortA MSB="19" LSB="16"/>
-        <AddressRange_PortA Begin="0" End="8191"/>
-        <BitLayout_PortA pattern="p0_d4"/>
-        <DataWidth_PortB MSB="19" LSB="16"/>
-        <AddressRange_PortB Begin="0" End="8191"/>
-        <BitLayout_PortB pattern="p0_d4"/>
-        <Parity ON="false" NumBits="0"/>
-      </BRAM>
-      <BRAM MemType="RAMB36" Placement="X0Y6" Read_Width_A="4" Read_Width_B="4" SLR_INDEX="0">
-        <DataWidth_PortA MSB="23" LSB="20"/>
-        <AddressRange_PortA Begin="0" End="8191"/>
-        <BitLayout_PortA pattern="p0_d4"/>
-        <DataWidth_PortB MSB="23" LSB="20"/>
-        <AddressRange_PortB Begin="0" End="8191"/>
-        <BitLayout_PortB pattern="p0_d4"/>
-        <Parity ON="false" NumBits="0"/>
-      </BRAM>
-    </MemoryLayout>
-  </MemoryArray>
-  <MemoryArray InstPath="u_DataBuffer/u_BramWrapper0/u_xpm_memory_sdpram/xpm_memory_base_inst" MemoryPrimitive="block" MemoryConfiguration="enabled_configuration">
-    <MemoryLayout Name="u_DataBuffer/u_BramWrapper0/u_xpm_memory_sdpram/xpm_memory_base_inst" CoreMemory_Width="24" MemoryType="RAM_SDP">
       <BRAM MemType="RAMB36" Placement="X1Y5" Read_Width_A="4" Read_Width_B="4" SLR_INDEX="0">
-        <DataWidth_PortA MSB="3" LSB="0"/>
-        <AddressRange_PortA Begin="0" End="8191"/>
-        <BitLayout_PortA pattern="p0_d4"/>
-        <DataWidth_PortB MSB="3" LSB="0"/>
-        <AddressRange_PortB Begin="0" End="8191"/>
-        <BitLayout_PortB pattern="p0_d4"/>
-        <Parity ON="false" NumBits="0"/>
-      </BRAM>
-      <BRAM MemType="RAMB36" Placement="X0Y7" Read_Width_A="4" Read_Width_B="4" SLR_INDEX="0">
-        <DataWidth_PortA MSB="7" LSB="4"/>
-        <AddressRange_PortA Begin="0" End="8191"/>
-        <BitLayout_PortA pattern="p0_d4"/>
-        <DataWidth_PortB MSB="7" LSB="4"/>
-        <AddressRange_PortB Begin="0" End="8191"/>
-        <BitLayout_PortB pattern="p0_d4"/>
-        <Parity ON="false" NumBits="0"/>
-      </BRAM>
-      <BRAM MemType="RAMB36" Placement="X1Y6" Read_Width_A="4" Read_Width_B="4" SLR_INDEX="0">
-        <DataWidth_PortA MSB="11" LSB="8"/>
-        <AddressRange_PortA Begin="0" End="8191"/>
-        <BitLayout_PortA pattern="p0_d4"/>
-        <DataWidth_PortB MSB="11" LSB="8"/>
-        <AddressRange_PortB Begin="0" End="8191"/>
-        <BitLayout_PortB pattern="p0_d4"/>
-        <Parity ON="false" NumBits="0"/>
-      </BRAM>
-      <BRAM MemType="RAMB36" Placement="X1Y9" Read_Width_A="4" Read_Width_B="4" SLR_INDEX="0">
-        <DataWidth_PortA MSB="15" LSB="12"/>
-        <AddressRange_PortA Begin="0" End="8191"/>
-        <BitLayout_PortA pattern="p0_d4"/>
-        <DataWidth_PortB MSB="15" LSB="12"/>
-        <AddressRange_PortB Begin="0" End="8191"/>
-        <BitLayout_PortB pattern="p0_d4"/>
-        <Parity ON="false" NumBits="0"/>
-      </BRAM>
-      <BRAM MemType="RAMB36" Placement="X0Y9" Read_Width_A="4" Read_Width_B="4" SLR_INDEX="0">
         <DataWidth_PortA MSB="19" LSB="16"/>
         <AddressRange_PortA Begin="0" End="8191"/>
         <BitLayout_PortA pattern="p0_d4"/>
@@ -115,7 +115,7 @@
         <BitLayout_PortB pattern="p0_d4"/>
         <Parity ON="false" NumBits="0"/>
       </BRAM>
-      <BRAM MemType="RAMB36" Placement="X2Y6" Read_Width_A="4" Read_Width_B="4" SLR_INDEX="0">
+      <BRAM MemType="RAMB36" Placement="X0Y8" Read_Width_A="4" Read_Width_B="4" SLR_INDEX="0">
         <DataWidth_PortA MSB="23" LSB="20"/>
         <AddressRange_PortA Begin="0" End="8191"/>
         <BitLayout_PortA pattern="p0_d4"/>

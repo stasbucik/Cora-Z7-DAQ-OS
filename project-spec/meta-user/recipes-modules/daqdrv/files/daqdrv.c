@@ -17,6 +17,9 @@
 *   with this program. If not, see <http://www.gnu.org/licenses/>.
 
 */
+#include <linux/atomic.h>
+#include <linux/types.h>
+#include <linux/fs.h>
 #include <linux/kernel.h>
 #include <linux/init.h>
 #include <linux/module.h>
@@ -37,13 +40,23 @@ MODULE_DESCRIPTION
 
 #define DRIVER_NAME "daqdrv"
 
-/* Simple example of how to receive command line parameters to your module.
-   Delete if you don't need them */
-unsigned myint = 0xdeadbeef;
-char *mystr = "default";
+#define BUF_LEN 4096
 
-module_param(myint, int, S_IRUGO);
-module_param(mystr, charp, S_IRUGO);
+static int major; /* major number assigned to our device driver */
+enum {
+	CDEV_NOT_USED,
+	CDEV_EXCLUSIVE_OPEN
+};
+static atomic_t already_open = ATOMIC_INIT(CDEV_NOT_USED);
+static u32 samples[BUF_LEN];
+
+static struct class *cls;
+
+// static struct file_operations chardev_fops = {
+// 	.read = daqdrv_read,
+// 	.open = daqdrv_open,
+// 	.release = daqdrv_release,
+// };
 
 struct daqdrv_local {
 	int irq;
@@ -54,9 +67,33 @@ struct daqdrv_local {
 
 static irqreturn_t daqdrv_irq(int irq, void *lp)
 {
-	printk("daqdrv interrupt\n");
+	// for (int i = 0; i < BUF_LEN; i++)
+	// {
+		
+	// }
+	// ioread32_rep(((struct daqdrv_local *)lp)->base_addr, samples, 8);
+	memcpy_fromio(samples, ((struct daqdrv_local *)lp)->base_addr, 4*BUF_LEN);
 	return IRQ_HANDLED;
 }
+
+// static int device_open(struct inode *inode, struct file *file)
+// {
+// 	if (atomic_cmpxchg(&already_open, CDEV_NOT_USED, CDEV_EXCLUSIVE_OPEN))
+// 		return -EBUSY;
+
+// 	try_module_get(THIS_MODULE);
+// 	return 0;
+// }
+// static int device_release(struct inode *inode, struct file *file)
+// {
+// 	atomic_set(&already_open, CDEV_NOT_USED);
+// 	module_put(THIS_MODULE);
+// 	return 0;
+// }
+// static ssize_t device_read(struct file *filp, char __user *buffer, size_t length, loff_t *offset)
+// {
+
+// }
 
 static int daqdrv_probe(struct platform_device *pdev)
 {
@@ -98,16 +135,39 @@ static int daqdrv_probe(struct platform_device *pdev)
 		goto error2;
 	}
 
+	// major = register_chrdev(0, DRIVER_NAME, &chardev_fops);
+	// if (major < 0) {
+	// 	pr_alert("Registering char device failed with %d\n", major);
+	// 	return major;
+	// }
+	// pr_info("I was assigned major number %d.\n", major);
+	// cls = class_create(DRIVER_NAME);
+	// device_create(cls, NULL, MKDEV(major, 0), NULL, DRIVER_NAME);
+	// pr_info("Device created on /dev/%s\n", DRIVER_NAME);
+
 	/* Get IRQ for the device */
-	r_irq = platform_get_resource(pdev, IORESOURCE_IRQ, 0);
-	if (!r_irq) {
+	// r_irq = platform_get_resource(pdev, IORESOURCE_IRQ, 0);
+	// if (!r_irq) {
+	// 	dev_info(dev, "no IRQ found\n");
+	// 	dev_info(dev, "daqdrv at 0x%08x mapped to 0x%08x\n",
+	// 		(unsigned int __force)lp->mem_start,
+	// 		(unsigned int __force)lp->base_addr);
+	// 	return 0;
+	// }
+	// lp->irq = r_irq->start;
+
+	int n_irq = platform_get_irq_optional(pdev, 0);
+	if (n_irq < 0) {
 		dev_info(dev, "no IRQ found\n");
 		dev_info(dev, "daqdrv at 0x%08x mapped to 0x%08x\n",
 			(unsigned int __force)lp->mem_start,
 			(unsigned int __force)lp->base_addr);
 		return 0;
 	}
-	lp->irq = r_irq->start;
+	lp->irq = n_irq;
+
+
+
 	rc = request_irq(lp->irq, &daqdrv_irq, 0, DRIVER_NAME, lp);
 	if (rc) {
 		dev_err(dev, "daqdrv: Could not allocate interrupt %d.\n",
@@ -135,6 +195,11 @@ static int daqdrv_remove(struct platform_device *pdev)
 	struct device *dev = &pdev->dev;
 	struct daqdrv_local *lp = dev_get_drvdata(dev);
 	free_irq(lp->irq, lp);
+
+	// device_destroy(cls, MKDEV(major, 0));
+	// class_destroy(cls);
+	// unregister_chrdev(major, DRIVER_NAME);
+
 	iounmap(lp->base_addr);
 	release_mem_region(lp->mem_start, lp->mem_end - lp->mem_start + 1);
 	kfree(lp);
@@ -165,10 +230,7 @@ static struct platform_driver daqdrv_driver = {
 
 static int __init daqdrv_init(void)
 {
-	printk("<1>Hello module world.\n");
-	printk("<1>Module parameters were (0x%08x) and \"%s\"\n", myint,
-	       mystr);
-
+	printk("<1>DAQ driver loaded.\n");
 	return platform_driver_register(&daqdrv_driver);
 }
 
@@ -176,7 +238,7 @@ static int __init daqdrv_init(void)
 static void __exit daqdrv_exit(void)
 {
 	platform_driver_unregister(&daqdrv_driver);
-	printk(KERN_ALERT "Goodbye module world.\n");
+	printk(KERN_ALERT "DAQ driver exited.\n");
 }
 
 module_init(daqdrv_init);

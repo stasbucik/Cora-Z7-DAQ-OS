@@ -1,5 +1,8 @@
-M_AXI_ps:
-- M_AXI_ps
+M_AXI_buffer:
+- M_AXI_buffer
+- None
+M_AXI_ctrl:
+- M_AXI_ctrl
 - None
 ps7_afi_0:
 - ps7_afi

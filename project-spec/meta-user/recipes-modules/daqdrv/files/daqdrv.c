@@ -26,6 +26,7 @@
 #include <linux/slab.h>
 #include <linux/io.h>
 #include <linux/interrupt.h>
+#include <linux/cdev.h>
 
 #include <linux/of_address.h>
 #include <linux/of_device.h>
@@ -42,7 +43,13 @@ MODULE_DESCRIPTION
 
 #define BUF_LEN 4096
 
+static int daqdrv_open(struct inode *, struct file *);
+static int daqdrv_release(struct inode *, struct file *);
+static ssize_t daqdrv_read(struct file *, char __user *, size_t, loff_t *);
+static ssize_t daqdrv_write(struct file *, const char __user *, size_t, loff_t *);
+
 static int major; /* major number assigned to our device driver */
+static int num_of_dev = 1;
 enum {
 	CDEV_NOT_USED,
 	CDEV_EXCLUSIVE_OPEN
@@ -52,138 +59,219 @@ static u32 samples[BUF_LEN];
 
 static struct class *cls;
 
-// static struct file_operations chardev_fops = {
-// 	.read = daqdrv_read,
-// 	.open = daqdrv_open,
-// 	.release = daqdrv_release,
-// };
+static struct file_operations chardev_fops = {
+	.read = daqdrv_read,
+	.write = daqdrv_write,
+	.open = daqdrv_open,
+	.release = daqdrv_release,
+};
 
 struct daqdrv_local {
 	int irq;
-	unsigned long mem_start;
-	unsigned long mem_end;
-	void __iomem *base_addr;
+	struct cdev chardev;
+	unsigned long buffer_mem_start;
+	unsigned long buffer_mem_end;
+	unsigned long ctrl_mem_start;
+	unsigned long ctrl_mem_end;
+	void __iomem *buffer_base_addr;
+	void __iomem *ctrl_base_addr;
 };
 
 static irqreturn_t daqdrv_irq(int irq, void *lp)
 {
-	// for (int i = 0; i < BUF_LEN; i++)
-	// {
-		
-	// }
-	// ioread32_rep(((struct daqdrv_local *)lp)->base_addr, samples, 8);
-	memcpy_fromio(samples, ((struct daqdrv_local *)lp)->base_addr, 4*BUF_LEN);
+	memcpy_fromio(samples, ((struct daqdrv_local *)lp)->buffer_base_addr, 4*BUF_LEN);
 	return IRQ_HANDLED;
 }
 
-// static int device_open(struct inode *inode, struct file *file)
-// {
-// 	if (atomic_cmpxchg(&already_open, CDEV_NOT_USED, CDEV_EXCLUSIVE_OPEN))
-// 		return -EBUSY;
+static int daqdrv_open(struct inode *inode, struct file *file)
+{
+	if (atomic_cmpxchg(&already_open, CDEV_NOT_USED, CDEV_EXCLUSIVE_OPEN))
+		return -EBUSY;
 
-// 	try_module_get(THIS_MODULE);
-// 	return 0;
-// }
-// static int device_release(struct inode *inode, struct file *file)
-// {
-// 	atomic_set(&already_open, CDEV_NOT_USED);
-// 	module_put(THIS_MODULE);
-// 	return 0;
-// }
-// static ssize_t device_read(struct file *filp, char __user *buffer, size_t length, loff_t *offset)
-// {
+	try_module_get(THIS_MODULE);
 
-// }
+	struct daqdrv_local *lp = container_of(inode->i_cdev, struct daqdrv_local, chardev);
+	if (lp == NULL) {
+		printk("drv data is null");
+		return 0;
+	}
+	
+	u32 data = ioread32(lp->ctrl_base_addr);
+	printk("ctrl base address is %08x and ctrl register is %08x\n", (u32)lp->ctrl_base_addr, data);
+	return 0;
+}
+static int daqdrv_release(struct inode *inode, struct file *file)
+{
+	atomic_set(&already_open, CDEV_NOT_USED);
+	module_put(THIS_MODULE);
+	return 0;
+}
+static ssize_t daqdrv_read(struct file *filp, char __user *buffer, size_t length, loff_t *offset)
+{
+	return 0;
+}
+
+static ssize_t daqdrv_write(struct file *filp, const char __user *buff, size_t len, loff_t *off)
+{
+	pr_alert("Sorry, this operation is not supported.\n");
+	return -EINVAL;
+}
 
 static int daqdrv_probe(struct platform_device *pdev)
 {
-	struct resource *r_irq; /* Interrupt resources */
-	struct resource *r_mem; /* IO mem resources */
+	//struct resource *r_irq; /* Interrupt resources */
+	struct resource *r_mem_buff; /* IO mem resources */
+	struct resource *r_mem_ctrl; /* IO mem resources */
 	struct device *dev = &pdev->dev;
 	struct daqdrv_local *lp = NULL;
+	dev_t dvt;
 
 	int rc = 0;
 	dev_info(dev, "Device Tree Probing\n");
 	/* Get iospace for the device */
-	r_mem = platform_get_resource(pdev, IORESOURCE_MEM, 0);
-	if (!r_mem) {
-		dev_err(dev, "invalid address\n");
+
+	// Get iospace for buffer
+	r_mem_buff = platform_get_resource(pdev, IORESOURCE_MEM, 0);
+	if (!r_mem_buff) {
+		dev_err(dev, "invalid address for buffer\n");
 		return -ENODEV;
 	}
+
+	// Get iospace for ctrl
+	r_mem_ctrl = platform_get_resource(pdev, IORESOURCE_MEM, 1);
+	if (!r_mem_ctrl) {
+		dev_err(dev, "invalid address for ctrl\n");
+		return -ENODEV;
+	}
+
+	// init and allocate daqdrv_local structure
 	lp = (struct daqdrv_local *) kmalloc(sizeof(struct daqdrv_local), GFP_KERNEL);
 	if (!lp) {
 		dev_err(dev, "Cound not allocate daqdrv device\n");
 		return -ENOMEM;
 	}
 	dev_set_drvdata(dev, lp);
-	lp->mem_start = r_mem->start;
-	lp->mem_end = r_mem->end;
+	lp->buffer_mem_start = r_mem_buff->start;
+	lp->buffer_mem_end = r_mem_buff->end;
+	lp->ctrl_mem_start = r_mem_ctrl->start;
+	lp->ctrl_mem_end = r_mem_ctrl->end;
 
-	if (!request_mem_region(lp->mem_start,
-				lp->mem_end - lp->mem_start + 1,
+	// request memory region for buffer
+	if (!request_mem_region(lp->buffer_mem_start,
+				lp->buffer_mem_end - lp->buffer_mem_start + 1,
 				DRIVER_NAME)) {
 		dev_err(dev, "Couldn't lock memory region at %p\n",
-			(void *)lp->mem_start);
+			(void *)lp->buffer_mem_start);
 		rc = -EBUSY;
 		goto error1;
 	}
 
-	lp->base_addr = ioremap(lp->mem_start, lp->mem_end - lp->mem_start + 1);
-	if (!lp->base_addr) {
-		dev_err(dev, "daqdrv: Could not allocate iomem\n");
-		rc = -EIO;
+	// request memory region for ctrl
+	if (!request_mem_region(lp->ctrl_mem_start,
+				lp->ctrl_mem_end - lp->ctrl_mem_start + 1,
+				DRIVER_NAME)) {
+		dev_err(dev, "Couldn't lock memory region at %p\n",
+			(void *)lp->ctrl_mem_start);
+		rc = -EBUSY;
 		goto error2;
 	}
 
-	// major = register_chrdev(0, DRIVER_NAME, &chardev_fops);
-	// if (major < 0) {
-	// 	pr_alert("Registering char device failed with %d\n", major);
-	// 	return major;
-	// }
-	// pr_info("I was assigned major number %d.\n", major);
-	// cls = class_create(DRIVER_NAME);
-	// device_create(cls, NULL, MKDEV(major, 0), NULL, DRIVER_NAME);
-	// pr_info("Device created on /dev/%s\n", DRIVER_NAME);
+	// remap buffer
+	lp->buffer_base_addr = ioremap(lp->buffer_mem_start, lp->buffer_mem_end - lp->buffer_mem_start + 1);
+	if (!lp->buffer_base_addr) {
+		dev_err(dev, "daqdrv: Could not allocate iomem for buffer\n");
+		rc = -EIO;
+		goto error3;
+	}
+
+	// remap ctrl
+	lp->ctrl_base_addr = ioremap(lp->ctrl_mem_start, lp->ctrl_mem_end - lp->ctrl_mem_start + 1);
+	if (!lp->ctrl_base_addr) {
+		dev_err(dev, "daqdrv: Could not allocate iomem for ctrl\n");
+		rc = -EIO;
+		goto error4;
+	}
+
+	// allocate character device 
+	int ret_alloc_chardev = alloc_chrdev_region(&dvt, 0, num_of_dev, DRIVER_NAME);
+	if (ret_alloc_chardev) {
+		dev_err(dev, "Allocating char device failed with %d\n", ret_alloc_chardev);
+		rc = ret_alloc_chardev;
+		goto error5;
+	}
+
+	// register character device
+	major = MAJOR(dvt);
+	cdev_init(&(lp->chardev), &chardev_fops);
+	int ret_cdev_add = cdev_add(&(lp->chardev), dvt, num_of_dev);
+	if (ret_cdev_add) {
+		dev_err(dev, "Registering char device failed with %d\n", ret_cdev_add);
+		rc = ret_cdev_add;
+		goto error6;
+	}
+
+	// Create device file
+	dev_info(dev, "I was assigned major number %d.\n", major);
+	cls = class_create(DRIVER_NAME);
+	device_create(cls, NULL, dvt, NULL, DRIVER_NAME);
+	dev_info(dev, "Device created on /dev/%s\n", DRIVER_NAME);
 
 	/* Get IRQ for the device */
 	// r_irq = platform_get_resource(pdev, IORESOURCE_IRQ, 0);
 	// if (!r_irq) {
 	// 	dev_info(dev, "no IRQ found\n");
 	// 	dev_info(dev, "daqdrv at 0x%08x mapped to 0x%08x\n",
-	// 		(unsigned int __force)lp->mem_start,
-	// 		(unsigned int __force)lp->base_addr);
+	// 		(unsigned int __force)lp->buffer_mem_start,
+	// 		(unsigned int __force)lp->buffer_base_addr);
 	// 	return 0;
 	// }
 	// lp->irq = r_irq->start;
 
+	// get interrupt
 	int n_irq = platform_get_irq_optional(pdev, 0);
 	if (n_irq < 0) {
 		dev_info(dev, "no IRQ found\n");
-		dev_info(dev, "daqdrv at 0x%08x mapped to 0x%08x\n",
-			(unsigned int __force)lp->mem_start,
-			(unsigned int __force)lp->base_addr);
+		dev_info(dev, "daqdrv buffer at 0x%08x mapped to 0x%08x\n",
+			(unsigned int __force)lp->buffer_mem_start,
+			(unsigned int __force)lp->buffer_base_addr);
+		dev_info(dev, "daqdrv ctrl at 0x%08x mapped to 0x%08x\n",
+			(unsigned int __force)lp->ctrl_mem_start,
+			(unsigned int __force)lp->ctrl_base_addr);
 		return 0;
 	}
 	lp->irq = n_irq;
 
-
-
+	// register interrupt
 	rc = request_irq(lp->irq, &daqdrv_irq, 0, DRIVER_NAME, lp);
 	if (rc) {
 		dev_err(dev, "daqdrv: Could not allocate interrupt %d.\n",
 			lp->irq);
-		goto error3;
+		goto error7;
 	}
 
-	dev_info(dev,"daqdrv at 0x%08x mapped to 0x%08x, irq=%d\n",
-		(unsigned int __force)lp->mem_start,
-		(unsigned int __force)lp->base_addr,
+	dev_info(dev,"daqdrv buffer at 0x%08x mapped to 0x%08x, irq=%d\n",
+		(unsigned int __force)lp->buffer_mem_start,
+		(unsigned int __force)lp->buffer_base_addr,
 		lp->irq);
+	dev_info(dev,"daqdrv ctrl at 0x%08x mapped to 0x%08x",
+		(unsigned int __force)lp->ctrl_mem_start,
+		(unsigned int __force)lp->ctrl_base_addr);
 	return 0;
-error3:
+error7:
 	free_irq(lp->irq, lp);
+	device_destroy(cls, dvt);
+	class_destroy(cls);
+	cdev_del(&(lp->chardev));
+error6:
+	unregister_chrdev_region(dvt, num_of_dev);
+error5:
+	iounmap(lp->ctrl_base_addr);
+error4:
+	iounmap(lp->buffer_base_addr);
+error3:
+	release_mem_region(lp->ctrl_mem_start, lp->ctrl_mem_end - lp->ctrl_mem_start + 1);
 error2:
-	release_mem_region(lp->mem_start, lp->mem_end - lp->mem_start + 1);
+	release_mem_region(lp->buffer_mem_start, lp->buffer_mem_end - lp->buffer_mem_start + 1);
 error1:
 	kfree(lp);
 	dev_set_drvdata(dev, NULL);
@@ -192,16 +280,20 @@ error1:
 
 static int daqdrv_remove(struct platform_device *pdev)
 {
+	dev_t dvt = MKDEV(major, 0);
 	struct device *dev = &pdev->dev;
 	struct daqdrv_local *lp = dev_get_drvdata(dev);
 	free_irq(lp->irq, lp);
 
-	// device_destroy(cls, MKDEV(major, 0));
-	// class_destroy(cls);
-	// unregister_chrdev(major, DRIVER_NAME);
+	device_destroy(cls, dvt);
+	class_destroy(cls);
+	cdev_del(&(lp->chardev));
+	unregister_chrdev_region(dvt, num_of_dev);
 
-	iounmap(lp->base_addr);
-	release_mem_region(lp->mem_start, lp->mem_end - lp->mem_start + 1);
+	iounmap(lp->ctrl_base_addr);
+	iounmap(lp->buffer_base_addr);
+	release_mem_region(lp->ctrl_mem_start, lp->ctrl_mem_end - lp->ctrl_mem_start + 1);
+	release_mem_region(lp->buffer_mem_start, lp->buffer_mem_end - lp->buffer_mem_start + 1);
 	kfree(lp);
 	dev_set_drvdata(dev, NULL);
 	return 0;

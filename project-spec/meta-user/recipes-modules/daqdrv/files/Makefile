@@ -1,5 +1,5 @@
 obj-m := daqdrv.o
-daqdrv-objs += daqdrv_core.o kfifo-iomod.o
+daqdrv-objs += daqdrv-core.o kfifo-iomod.o
 
 MY_CFLAGS += -g -DDEBUG
 ccflags-y += ${MY_CFLAGS}

@@ -32,6 +32,8 @@
 #include <linux/of_device.h>
 #include <linux/of_platform.h>
 
+#include "kfifo-iomod.h"
+
 /* Standard module information, edit as appropriate */
 MODULE_LICENSE("GPL");
 MODULE_AUTHOR
@@ -62,6 +64,8 @@ enum {
 };
 static atomic_t already_open = ATOMIC_INIT(CDEV_NOT_USED);
 static u32 samples[BUF_LEN];
+
+//static struct kfifo_iomod test;
 
 static struct class *cls;
 
@@ -234,6 +238,8 @@ static int daqdrv_probe(struct platform_device *pdev)
 	cls = class_create(DRIVER_NAME);
 	device_create(cls, NULL, dvt, NULL, DRIVER_NAME);
 	dev_info(dev, "Device created on /dev/%s\n", DRIVER_NAME);
+
+	//kfifo_iomod_alloc(&test, 16, GFP_KERNEL);
 
 	// get interrupt
 	int n_irq = platform_get_irq_optional(pdev, 0);

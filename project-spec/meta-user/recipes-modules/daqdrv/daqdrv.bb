@@ -8,7 +8,9 @@ inherit module
 INHIBIT_PACKAGE_STRIP = "1"
 
 SRC_URI = "file://Makefile \
-           file://daqdrv.c \
+           file://daqdrv_core.c \
+           file://kfifo-iomod.c \
+           file://kfifo-iomod.h \
 	   file://COPYING \
           "
 

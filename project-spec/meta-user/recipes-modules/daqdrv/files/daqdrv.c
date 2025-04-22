@@ -43,6 +43,12 @@ MODULE_DESCRIPTION
 
 #define BUF_LEN 4096
 
+#define ADC_RUN_BIT 0
+#define DAC_RUN_BIT 1
+
+#define REG_SET_BIT(reg, bit) reg = reg | (1u << bit);
+#define REG_UNSET_BIT(reg, bit) reg = reg & ~(1u << bit);
+
 static int daqdrv_open(struct inode *, struct file *);
 static int daqdrv_release(struct inode *, struct file *);
 static ssize_t daqdrv_read(struct file *, char __user *, size_t, loff_t *);
@@ -93,15 +99,28 @@ static int daqdrv_open(struct inode *inode, struct file *file)
 	struct daqdrv_local *lp = container_of(inode->i_cdev, struct daqdrv_local, chardev);
 	if (lp == NULL) {
 		printk("drv data is null");
-		return 0;
+		return -ENOTRECOVERABLE;
 	}
 	
-	u32 data = ioread32(lp->ctrl_base_addr);
-	printk("ctrl base address is %08x and ctrl register is %08x\n", (u32)lp->ctrl_base_addr, data);
+	u32 ctrl_reg = ioread32(lp->ctrl_base_addr);
+	REG_SET_BIT(ctrl_reg, ADC_RUN_BIT)
+	REG_SET_BIT(ctrl_reg, DAC_RUN_BIT)
+	iowrite32(ctrl_reg, lp->ctrl_base_addr);
 	return 0;
 }
 static int daqdrv_release(struct inode *inode, struct file *file)
 {
+	struct daqdrv_local *lp = container_of(inode->i_cdev, struct daqdrv_local, chardev);
+	if (lp == NULL) {
+		printk("drv data is null");
+		return -ENOTRECOVERABLE;
+	}
+	
+	u32 ctrl_reg = ioread32(lp->ctrl_base_addr);
+	REG_UNSET_BIT(ctrl_reg, ADC_RUN_BIT)
+	REG_UNSET_BIT(ctrl_reg, DAC_RUN_BIT)
+	iowrite32(ctrl_reg, lp->ctrl_base_addr);
+
 	atomic_set(&already_open, CDEV_NOT_USED);
 	module_put(THIS_MODULE);
 	return 0;
@@ -215,17 +234,6 @@ static int daqdrv_probe(struct platform_device *pdev)
 	cls = class_create(DRIVER_NAME);
 	device_create(cls, NULL, dvt, NULL, DRIVER_NAME);
 	dev_info(dev, "Device created on /dev/%s\n", DRIVER_NAME);
-
-	/* Get IRQ for the device */
-	// r_irq = platform_get_resource(pdev, IORESOURCE_IRQ, 0);
-	// if (!r_irq) {
-	// 	dev_info(dev, "no IRQ found\n");
-	// 	dev_info(dev, "daqdrv at 0x%08x mapped to 0x%08x\n",
-	// 		(unsigned int __force)lp->buffer_mem_start,
-	// 		(unsigned int __force)lp->buffer_base_addr);
-	// 	return 0;
-	// }
-	// lp->irq = r_irq->start;
 
 	// get interrupt
 	int n_irq = platform_get_irq_optional(pdev, 0);

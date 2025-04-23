@@ -11,6 +11,7 @@
 #include <linux/err.h>
 #include <linux/log2.h>
 #include <linux/uaccess.h>
+#include <linux/io.h>
 #include "kfifo-iomod.h"
 
 /*
@@ -101,8 +102,17 @@ static void kfifo_iomod_copy_in(struct __kfifo_iomod *fifo, const void *src,
 	}
 	l = min(len, size - off);
 
-	memcpy(fifo->data + off, src, l);
-	memcpy(fifo->data, src + l, len - l);
+	if ((l % 4) != 0 || (((unsigned int)src) % 4) != 0) {
+		printk("error: first read start %08x, len %d\n", (unsigned int)src, l);
+	} else {
+		memcpy_fromio(fifo->data + off, src, l);
+	}
+	if ((len - l) % 4 != 0 || (((unsigned int)src + l) % 4) != 0) {
+		printk("error: second read start %08x, len %d\n", (unsigned int)src + l, len - l);
+	} else {
+		memcpy_fromio(fifo->data, src + l, len - l);
+	}
+	
 	/*
 	 * make sure that the data in the fifo is up to date before
 	 * incrementing the fifo->in index counter

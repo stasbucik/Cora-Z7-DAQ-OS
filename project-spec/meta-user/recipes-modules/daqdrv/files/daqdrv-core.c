@@ -47,7 +47,7 @@ MODULE_DESCRIPTION
 #define DRIVER_NAME "daqdrv"
 
 #define FPGA_BUF_LEN 4096
-#define FIFO_BUF_LEN FPGA_BUF_LEN * 4
+#define FIFO_BUF_LEN FPGA_BUF_LEN * 8
 
 #define ADC_RUN_BIT 0
 #define DAC_RUN_BIT 1
@@ -210,7 +210,6 @@ static ssize_t daqdrv_read(struct file *filp, char __user *buffer, size_t length
 	size_t aligned_len = min_length - (min_length % 4);
 
 	if (aligned_len == 0) {
-		printk("requested %d\n availible %d\n aligned %d\n\n", length, availible_data, aligned_len);
 		return -EAGAIN;
 	}
 

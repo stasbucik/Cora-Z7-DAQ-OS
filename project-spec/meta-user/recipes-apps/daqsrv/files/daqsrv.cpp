@@ -31,6 +31,9 @@
 */
 
 #include <iostream>
+#include <chrono>
+#include <thread>
+#include <cmath>
 #include <fcntl.h>
 #include <errno.h>
 #include <unistd.h>
@@ -38,12 +41,16 @@
 #define TIMEOUT 10
 #define BUFFER_SIZE 4096
 
+#define WRITE_SPEED 1000000.f
+#define FPGA_BUFFER_SIZE 4096.f
+#define WRITE_CYCLE FPGA_BUFFER_SIZE/WRITE_SPEED
+
 char buffer[BUFFER_SIZE];
 
 int main(int argc, char *argv[])
 {
 	int fd = open("/dev/daqdrv", O_RDONLY);
-	if (fd) {
+	if (fd == -1) {
 		std::cout << "Error occured when opening /dev/daqdrv: " << errno << std::endl;
 		return -1;
 	}
@@ -55,17 +62,26 @@ int main(int argc, char *argv[])
 	while (remaining > 0) {
 		dataRead = read(fd, buffer, BUFFER_SIZE);
 
-		if (dataRead = 0) {
-			nullCount++;
-
-			if (nullCount == TIMEOUT) {
-				std::cout << TIMEOUT << " consecutive attempts to read failed, exiting." << std::endl;
+		if (dataRead == -1) {
+			if (errno == EAGAIN) {
+				nullCount++;
+	
+				if (nullCount == TIMEOUT) {
+					std::cout << TIMEOUT << " consecutive attempts to read failed, exiting." << std::endl;
+					break;
+				} else {
+					std::this_thread::sleep_for(
+						std::chrono::microseconds(static_cast<int>(std::round(WRITE_CYCLE*1e6/2.f))));
+				}
+			} else {
+				std::cout << "Error occured when reading /dev/daqdrv: " << errno << std::endl;
 				break;
 			}
-		} else {
+		} else if (dataRead > 0) {
+			std::cout << dataRead << " bytes read." << std::endl;
+			remaining -= dataRead;
 			nullCount = 0;
 		}
-		remaining -= dataRead;
 	}
 
 	close(fd);

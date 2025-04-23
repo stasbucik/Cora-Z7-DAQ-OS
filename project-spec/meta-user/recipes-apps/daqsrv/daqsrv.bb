@@ -13,8 +13,8 @@ SRC_URI = "file://daqsrv.cpp \
 
 S = "${WORKDIR}"
 
-RDEPENDS:${PN} += "boost"
-DEPENDS:${PN} += "boost"
+RDEPENDS:${PN} += "boost daqdrv"
+DEPENDS        += "boost"
 
 do_compile() {
 	     oe_runmake

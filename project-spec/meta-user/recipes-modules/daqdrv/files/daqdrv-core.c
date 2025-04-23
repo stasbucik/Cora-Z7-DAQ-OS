@@ -84,17 +84,34 @@ struct daqdrv_local {
 	void __iomem *buffer_base_addr;
 	void __iomem *ctrl_base_addr;
 	struct kfifo_iomod fifo;
+	bool overflowing;
+	bool prev_overflowing;
 };
 
 static irqreturn_t daqdrv_irq(int irq, void *lp)
 {
 	struct daqdrv_local *lpp = (struct daqdrv_local *)lp;
 	u32 availible = kfifo_iomod_avail(&(lpp->fifo));
+
+	lpp->prev_overflowing = lpp->overflowing;
+
 	if (availible < 4*FPGA_BUF_LEN) {
-		printk("Dropping data, no space in fifo.\n");
-		return IRQ_HANDLED;
+		lpp->overflowing = true;
+	} else {
+		lpp->overflowing = false;
 	}
-	kfifo_iomod_in(&(lpp->fifo), lpp->buffer_base_addr, 4*FPGA_BUF_LEN);
+
+	if (lpp->overflowing == true && lpp->prev_overflowing == false) {
+		printk("Started overflowwing! Dropping data, no space in fifo.\n");
+	}
+
+	if (lpp->overflowing == false && lpp->prev_overflowing == true) {
+		printk("Stopped overflowing.\n");
+	}
+
+	if (lpp->overflowing == false) {
+		kfifo_iomod_in(&(lpp->fifo), lpp->buffer_base_addr, 4*FPGA_BUF_LEN);
+	}
 	return IRQ_HANDLED;
 }
 
@@ -126,6 +143,8 @@ static int daqdrv_release(struct inode *inode, struct file *file)
 	}
 
 	kfifo_iomod_reset_out(&(lp->fifo));
+	lp->overflowing = false;
+	lp->prev_overflowing = false;
 	
 	u32 ctrl_reg = ioread32(lp->ctrl_base_addr);
 	REG_UNSET_BIT(ctrl_reg, ADC_RUN_BIT)
@@ -147,6 +166,7 @@ static ssize_t daqdrv_read(struct file *filp, char __user *buffer, size_t length
 		printk("can't find chardev\n");
 		return 0;
 	}
+
 	struct daqdrv_local *lp = container_of(filp->f_inode->i_cdev, struct daqdrv_local, chardev);
 	if (lp == NULL) {
 		printk("drv data is null\n");
@@ -155,14 +175,15 @@ static ssize_t daqdrv_read(struct file *filp, char __user *buffer, size_t length
 
 	size_t availible_data = (size_t)kfifo_iomod_len(&(lp->fifo));
 	size_t min_length = min(length, availible_data);
-	size_t alligned_len = min_length - (min_length % 4);
+	size_t aligned_len = min_length - (min_length % 4);
 
-	if (alligned_len == 0) {
+	if (aligned_len == 0) {
+		printk("requested %d\n availible %d\n aligned %d\n\n", length, availible_data, aligned_len);
 		return -EAGAIN;
 	}
 
 	size_t actual_len = 0;
-	kfifo_iomod_to_user(&(lp->fifo), buffer, alligned_len, &actual_len);
+	kfifo_iomod_to_user(&(lp->fifo), buffer, aligned_len, &actual_len);
 	return actual_len;
 }
 

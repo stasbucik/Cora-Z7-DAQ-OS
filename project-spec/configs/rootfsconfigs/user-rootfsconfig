@@ -7,3 +7,4 @@ CONFIG_test-scripts
 
 CONFIG_nano
 CONFIG_daqdrv
+CONFIG_daqsrv

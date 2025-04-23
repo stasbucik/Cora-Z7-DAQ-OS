@@ -3770,6 +3770,7 @@ CONFIG_Init-manager-systemd=y
 # user packages 
 #
 CONFIG_daqdrv=y
+CONFIG_daqsrv=y
 CONFIG_gpio-demo=y
 CONFIG_nano=y
 CONFIG_peekpoke=y

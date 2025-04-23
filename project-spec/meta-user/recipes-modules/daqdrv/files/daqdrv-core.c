@@ -43,7 +43,8 @@ MODULE_DESCRIPTION
 
 #define DRIVER_NAME "daqdrv"
 
-#define BUF_LEN 4096
+#define FPGA_BUF_LEN 4096
+#define FIFO_BUF_LEN FPGA_BUF_LEN * 4
 
 #define ADC_RUN_BIT 0
 #define DAC_RUN_BIT 1
@@ -63,9 +64,6 @@ enum {
 	CDEV_EXCLUSIVE_OPEN
 };
 static atomic_t already_open = ATOMIC_INIT(CDEV_NOT_USED);
-static u32 samples[BUF_LEN];
-
-//static struct kfifo_iomod test;
 
 static struct class *cls;
 
@@ -85,11 +83,18 @@ struct daqdrv_local {
 	unsigned long ctrl_mem_end;
 	void __iomem *buffer_base_addr;
 	void __iomem *ctrl_base_addr;
+	struct kfifo_iomod fifo;
 };
 
 static irqreturn_t daqdrv_irq(int irq, void *lp)
 {
-	memcpy_fromio(samples, ((struct daqdrv_local *)lp)->buffer_base_addr, 4*BUF_LEN);
+	struct daqdrv_local *lpp = (struct daqdrv_local *)lp;
+	u32 availible = kfifo_iomod_avail(&(lpp->fifo));
+	if (availible < 4*FPGA_BUF_LEN) {
+		printk("Dropping data, no space in fifo.\n");
+		return IRQ_HANDLED;
+	}
+	kfifo_iomod_in(&(lpp->fifo), lpp->buffer_base_addr, 4*FPGA_BUF_LEN);
 	return IRQ_HANDLED;
 }
 
@@ -102,7 +107,7 @@ static int daqdrv_open(struct inode *inode, struct file *file)
 
 	struct daqdrv_local *lp = container_of(inode->i_cdev, struct daqdrv_local, chardev);
 	if (lp == NULL) {
-		printk("drv data is null");
+		printk("drv data is null\n");
 		return -ENOTRECOVERABLE;
 	}
 	
@@ -119,6 +124,8 @@ static int daqdrv_release(struct inode *inode, struct file *file)
 		printk("drv data is null");
 		return -ENOTRECOVERABLE;
 	}
+
+	kfifo_iomod_reset_out(&(lp->fifo));
 	
 	u32 ctrl_reg = ioread32(lp->ctrl_base_addr);
 	REG_UNSET_BIT(ctrl_reg, ADC_RUN_BIT)
@@ -131,7 +138,32 @@ static int daqdrv_release(struct inode *inode, struct file *file)
 }
 static ssize_t daqdrv_read(struct file *filp, char __user *buffer, size_t length, loff_t *offset)
 {
-	return 0;
+	if (filp->f_inode == NULL) {
+		printk("can't find inode\n");
+		return 0;
+	}
+
+	if (filp->f_inode->i_cdev == NULL) {
+		printk("can't find chardev\n");
+		return 0;
+	}
+	struct daqdrv_local *lp = container_of(filp->f_inode->i_cdev, struct daqdrv_local, chardev);
+	if (lp == NULL) {
+		printk("drv data is null\n");
+		return 0;
+	}
+
+	size_t availible_data = (size_t)kfifo_iomod_len(&(lp->fifo));
+	size_t min_length = min(length, availible_data);
+	size_t alligned_len = min_length - (min_length % 4);
+
+	if (alligned_len == 0) {
+		return -EAGAIN;
+	}
+
+	size_t actual_len = 0;
+	kfifo_iomod_to_user(&(lp->fifo), buffer, alligned_len, &actual_len);
+	return actual_len;
 }
 
 static ssize_t daqdrv_write(struct file *filp, const char __user *buff, size_t len, loff_t *off)
@@ -239,7 +271,13 @@ static int daqdrv_probe(struct platform_device *pdev)
 	device_create(cls, NULL, dvt, NULL, DRIVER_NAME);
 	dev_info(dev, "Device created on /dev/%s\n", DRIVER_NAME);
 
-	//kfifo_iomod_alloc(&test, 16, GFP_KERNEL);
+	// allocate fifo
+	int ret_fifo_alloc = kfifo_iomod_alloc(&(lp->fifo), FIFO_BUF_LEN*4, GFP_KERNEL);
+	if (ret_fifo_alloc) {
+		dev_err(dev, "Allocating fifo failed with %d\n", ret_fifo_alloc);
+		rc = ret_fifo_alloc;
+		goto error7;
+	}
 
 	// get interrupt
 	int n_irq = platform_get_irq_optional(pdev, 0);
@@ -260,7 +298,7 @@ static int daqdrv_probe(struct platform_device *pdev)
 	if (rc) {
 		dev_err(dev, "daqdrv: Could not allocate interrupt %d.\n",
 			lp->irq);
-		goto error7;
+		goto error8;
 	}
 
 	dev_info(dev,"daqdrv buffer at 0x%08x mapped to 0x%08x, irq=%d\n",
@@ -271,8 +309,10 @@ static int daqdrv_probe(struct platform_device *pdev)
 		(unsigned int __force)lp->ctrl_mem_start,
 		(unsigned int __force)lp->ctrl_base_addr);
 	return 0;
-error7:
+error8:
 	free_irq(lp->irq, lp);
+	kfifo_iomod_free(&(lp->fifo));
+error7:
 	device_destroy(cls, dvt);
 	class_destroy(cls);
 	cdev_del(&(lp->chardev));
@@ -298,6 +338,7 @@ static int daqdrv_remove(struct platform_device *pdev)
 	struct device *dev = &pdev->dev;
 	struct daqdrv_local *lp = dev_get_drvdata(dev);
 	free_irq(lp->irq, lp);
+	kfifo_iomod_free(&(lp->fifo));
 
 	device_destroy(cls, dvt);
 	class_destroy(cls);

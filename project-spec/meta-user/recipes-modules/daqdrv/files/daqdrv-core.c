@@ -139,7 +139,7 @@ static irqreturn_t daqdrv_irq(int irq, void *lp)
 
 	if (lpp->overflowing == false) {
 		kfifo_iomod_in(&(lpp->fifo), lpp->buffer_base_addr, 4*FPGA_BUF_LEN);
-		u32 stat_reg = ioread32(lp->stat_base_addr);
+		u32 stat_reg = ioread32(lpp->stat_base_addr);
 
 		if (REG_GET_BIT(stat_reg, OVERWRITE_BIT)) {
 			printk("FPGA buffer might be overwritten, IRQ was too slow!");
@@ -181,8 +181,8 @@ static int daqdrv_release(struct inode *inode, struct file *file)
 	}
 	
 	u32 ctrl_reg = ioread32(lp->ctrl_base_addr);
-	REG_UNSET_BIT(ctrl_reg, ADC_RUN_BIT)
-	REG_UNSET_BIT(ctrl_reg, DAC_RUN_BIT)
+	REG_UNSET_BIT(ctrl_reg, ADC_RUN_BIT);
+	REG_UNSET_BIT(ctrl_reg, DAC_RUN_BIT);
 	iowrite32(ctrl_reg, lp->ctrl_base_addr);
 
 	unsigned long flags;

@@ -96,7 +96,6 @@ struct daqdrv_local {
 	bool overflowing;
 	bool prev_overflowing;
 	struct kobject *module_object;
-	u32 fpga_buffer
 };
 
 static bool dataReady;

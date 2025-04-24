@@ -132,6 +132,13 @@
 			reg = <0x43c00000 0x1000>;
 			xlnx,name = "M_AXI_ctrl";
 		};
+		M_AXI_stat: M_AXI_stat@43c10000 {
+			status = "okay";
+			compatible = "M_AXI_stat";
+			xlnx,ip-name = "M_AXI_stat";
+			reg = <0x43c10000 0x1000>;
+			xlnx,name = "M_AXI_stat";
+		};
 		M_AXI_buffer: M_AXI_buffer@46000000 {
 			status = "okay";
 			compatible = "M_AXI_buffer";

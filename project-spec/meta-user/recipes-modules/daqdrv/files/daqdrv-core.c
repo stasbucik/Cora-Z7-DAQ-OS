@@ -52,8 +52,11 @@ MODULE_DESCRIPTION
 #define ADC_RUN_BIT 0
 #define DAC_RUN_BIT 1
 
-#define REG_SET_BIT(reg, bit) reg = reg | (1u << bit);
-#define REG_UNSET_BIT(reg, bit) reg = reg & ~(1u << bit);
+#define OVERWRITE_BIT 0
+
+#define REG_SET_BIT(reg, bit) reg = reg | (1u << bit)
+#define REG_UNSET_BIT(reg, bit) reg = reg & ~(1u << bit)
+#define REG_GET_BIT(reg, bit) ((reg & (1u << bit)) >> bit)
 
 static int daqdrv_open(struct inode *, struct file *);
 static int daqdrv_release(struct inode *, struct file *);
@@ -84,12 +87,16 @@ struct daqdrv_local {
 	unsigned long buffer_mem_end;
 	unsigned long ctrl_mem_start;
 	unsigned long ctrl_mem_end;
+	unsigned long stat_mem_start;
+	unsigned long stat_mem_end;
 	void __iomem *buffer_base_addr;
 	void __iomem *ctrl_base_addr;
+	void __iomem *stat_base_addr;
 	struct kfifo_iomod fifo;
 	bool overflowing;
 	bool prev_overflowing;
 	struct kobject *module_object;
+	u32 fpga_buffer
 };
 
 static bool dataReady;
@@ -133,6 +140,11 @@ static irqreturn_t daqdrv_irq(int irq, void *lp)
 
 	if (lpp->overflowing == false) {
 		kfifo_iomod_in(&(lpp->fifo), lpp->buffer_base_addr, 4*FPGA_BUF_LEN);
+		u32 stat_reg = ioread32(lp->stat_base_addr);
+
+		if (REG_GET_BIT(stat_reg, OVERWRITE_BIT)) {
+			printk("FPGA buffer might be overwritten, IRQ was too slow!");
+		}
 
 		unsigned long flags;
 		spin_lock_irqsave(&sl_dataReady, flags);
@@ -156,8 +168,8 @@ static int daqdrv_open(struct inode *inode, struct file *file)
 	}
 	
 	u32 ctrl_reg = ioread32(lp->ctrl_base_addr);
-	REG_SET_BIT(ctrl_reg, ADC_RUN_BIT)
-	REG_SET_BIT(ctrl_reg, DAC_RUN_BIT)
+	REG_SET_BIT(ctrl_reg, ADC_RUN_BIT);
+	REG_SET_BIT(ctrl_reg, DAC_RUN_BIT);
 	iowrite32(ctrl_reg, lp->ctrl_base_addr);
 	return 0;
 }
@@ -242,6 +254,7 @@ static int daqdrv_probe(struct platform_device *pdev)
 	//struct resource *r_irq; /* Interrupt resources */
 	struct resource *r_mem_buff; /* IO mem resources */
 	struct resource *r_mem_ctrl; /* IO mem resources */
+	struct resource *r_mem_stat; /* IO mem resources */
 	struct device *dev = &pdev->dev;
 	struct daqdrv_local *lp = NULL;
 	dev_t dvt;
@@ -264,6 +277,13 @@ static int daqdrv_probe(struct platform_device *pdev)
 		return -ENODEV;
 	}
 
+	// Get iospace for stat
+	r_mem_stat = platform_get_resource(pdev, IORESOURCE_MEM, 2);
+	if (!r_mem_stat) {
+		dev_err(dev, "invalid address for stat\n");
+		return -ENODEV;
+	}
+
 	// init and allocate daqdrv_local structure
 	lp = (struct daqdrv_local *) kmalloc(sizeof(struct daqdrv_local), GFP_KERNEL);
 	if (!lp) {
@@ -275,6 +295,8 @@ static int daqdrv_probe(struct platform_device *pdev)
 	lp->buffer_mem_end = r_mem_buff->end;
 	lp->ctrl_mem_start = r_mem_ctrl->start;
 	lp->ctrl_mem_end = r_mem_ctrl->end;
+	lp->stat_mem_start = r_mem_stat->start;
+	lp->stat_mem_end = r_mem_stat->end;
 	dataReady = false;
 
 	spin_lock_init(&sl_dataReady);
@@ -299,12 +321,22 @@ static int daqdrv_probe(struct platform_device *pdev)
 		goto error2;
 	}
 
+	// request memory region for stat
+	if (!request_mem_region(lp->stat_mem_start,
+				lp->stat_mem_end - lp->stat_mem_start + 1,
+				DRIVER_NAME)) {
+		dev_err(dev, "Couldn't lock memory region at %p\n",
+			(void *)lp->stat_mem_start);
+		rc = -EBUSY;
+		goto error3;
+	}
+
 	// remap buffer
 	lp->buffer_base_addr = ioremap(lp->buffer_mem_start, lp->buffer_mem_end - lp->buffer_mem_start + 1);
 	if (!lp->buffer_base_addr) {
 		dev_err(dev, "daqdrv: Could not allocate iomem for buffer\n");
 		rc = -EIO;
-		goto error3;
+		goto error4;
 	}
 
 	// remap ctrl
@@ -312,7 +344,15 @@ static int daqdrv_probe(struct platform_device *pdev)
 	if (!lp->ctrl_base_addr) {
 		dev_err(dev, "daqdrv: Could not allocate iomem for ctrl\n");
 		rc = -EIO;
-		goto error4;
+		goto error5;
+	}
+
+	// remap stat
+	lp->stat_base_addr = ioremap(lp->stat_mem_start, lp->stat_mem_end - lp->stat_mem_start + 1);
+	if (!lp->stat_base_addr) {
+		dev_err(dev, "daqdrv: Could not allocate iomem for stat\n");
+		rc = -EIO;
+		goto error6;
 	}
 
 	// allocate character device 
@@ -320,7 +360,7 @@ static int daqdrv_probe(struct platform_device *pdev)
 	if (ret_alloc_chardev) {
 		dev_err(dev, "Allocating char device failed with %d\n", ret_alloc_chardev);
 		rc = ret_alloc_chardev;
-		goto error5;
+		goto error7;
 	}
 
 	// register character device
@@ -330,7 +370,7 @@ static int daqdrv_probe(struct platform_device *pdev)
 	if (ret_cdev_add) {
 		dev_err(dev, "Registering char device failed with %d\n", ret_cdev_add);
 		rc = ret_cdev_add;
-		goto error6;
+		goto error8;
 	}
 
 	// Create device file
@@ -344,7 +384,7 @@ static int daqdrv_probe(struct platform_device *pdev)
 	if (ret_fifo_alloc) {
 		dev_err(dev, "Allocating fifo failed with %d\n", ret_fifo_alloc);
 		rc = ret_fifo_alloc;
-		goto error7;
+		goto error9;
 	}
 
 	// create sysfs files
@@ -352,14 +392,14 @@ static int daqdrv_probe(struct platform_device *pdev)
 	if (!lp->module_object) {
 		dev_err(dev, "Kobject creation failed.\n");
 		rc = -ENOMEM;
-		goto error8;
+		goto error10;
 	}
 
 	int ret_sysfs_create_file = sysfs_create_file(lp->module_object, &dataReady_attribute.attr);
 	if (ret_sysfs_create_file) {
 		dev_err(dev, "Sysfs file creation failed with %d.\n", ret_sysfs_create_file);
 		rc = ret_sysfs_create_file;
-		goto error9;
+		goto error11;
 	}
 
 	// get interrupt
@@ -372,6 +412,9 @@ static int daqdrv_probe(struct platform_device *pdev)
 		dev_info(dev, "daqdrv ctrl at 0x%08x mapped to 0x%08x\n",
 			(unsigned int __force)lp->ctrl_mem_start,
 			(unsigned int __force)lp->ctrl_base_addr);
+		dev_info(dev, "daqdrv stat at 0x%08x mapped to 0x%08x\n",
+			(unsigned int __force)lp->stat_mem_start,
+			(unsigned int __force)lp->stat_base_addr);
 		return 0;
 	}
 	lp->irq = n_irq;
@@ -381,7 +424,7 @@ static int daqdrv_probe(struct platform_device *pdev)
 	if (rc) {
 		dev_err(dev, "daqdrv: Could not allocate interrupt %d.\n",
 			lp->irq);
-		goto error10;
+		goto error12;
 	}
 
 	dev_info(dev,"daqdrv buffer at 0x%08x mapped to 0x%08x, irq=%d\n",
@@ -391,23 +434,30 @@ static int daqdrv_probe(struct platform_device *pdev)
 	dev_info(dev,"daqdrv ctrl at 0x%08x mapped to 0x%08x",
 		(unsigned int __force)lp->ctrl_mem_start,
 		(unsigned int __force)lp->ctrl_base_addr);
+	dev_info(dev,"daqdrv stat at 0x%08x mapped to 0x%08x",
+		(unsigned int __force)lp->stat_mem_start,
+		(unsigned int __force)lp->stat_base_addr);
 	return 0;
-error10:
+error12:
 	free_irq(lp->irq, lp);
-error9:
+error11:
 	kobject_put(lp->module_object);
-error8:
+error10:
 	kfifo_iomod_free(&(lp->fifo));
-error7:
+error9:
 	device_destroy(cls, dvt);
 	class_destroy(cls);
 	cdev_del(&(lp->chardev));
-error6:
+error8:
 	unregister_chrdev_region(dvt, num_of_dev);
-error5:
+error7:
+	iounmap(lp->stat_base_addr);
+error6:
 	iounmap(lp->ctrl_base_addr);
-error4:
+error5:
 	iounmap(lp->buffer_base_addr);
+error4:
+	release_mem_region(lp->stat_mem_start, lp->stat_mem_end - lp->stat_mem_start + 1);
 error3:
 	release_mem_region(lp->ctrl_mem_start, lp->ctrl_mem_end - lp->ctrl_mem_start + 1);
 error2:
@@ -432,8 +482,10 @@ static int daqdrv_remove(struct platform_device *pdev)
 	cdev_del(&(lp->chardev));
 	unregister_chrdev_region(dvt, num_of_dev);
 
+	iounmap(lp->stat_base_addr);
 	iounmap(lp->ctrl_base_addr);
 	iounmap(lp->buffer_base_addr);
+	release_mem_region(lp->stat_mem_start, lp->stat_mem_end - lp->stat_mem_start + 1);
 	release_mem_region(lp->ctrl_mem_start, lp->ctrl_mem_end - lp->ctrl_mem_start + 1);
 	release_mem_region(lp->buffer_mem_start, lp->buffer_mem_end - lp->buffer_mem_start + 1);
 	kfree(lp);

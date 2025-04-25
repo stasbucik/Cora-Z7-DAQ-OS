@@ -4,6 +4,9 @@ M_AXI_buffer:
 M_AXI_ctrl:
 - M_AXI_ctrl
 - None
+M_AXI_stat:
+- M_AXI_stat
+- None
 ps7_afi_0:
 - ps7_afi
 - None

@@ -1,7 +1,7 @@
-APP = daqsrv
+APP = daqsrv-udp
 
 # Add any other object files to this list below
-APP_OBJS = daqsrv.o
+APP_OBJS = daqsrv-udp.o
 
 all: build
 

@@ -41,98 +41,105 @@
 #include <unistd.h>
 
 #include <boost/asio.hpp>
+#include <boost/array.hpp>
 #include <boost/exception/diagnostic_information.hpp>
 
-#define TIMEOUT 10
+#define TIMEOUT 50
 #define BUFFER_SIZE 256
-
-#define WRITE_SPEED 1000000.f
-#define FPGA_BUFFER_SIZE 4096.f
-#define WRITE_CYCLE FPGA_BUFFER_SIZE/WRITE_SPEED
 
 int main(int argc, char *argv[])
 {
 	using boost::asio::ip::udp;
-	using boost::asio::ip::address;
 
-	if (argc < 3) {
-		std::cout << "Specify IP address and port to connect the socket!" << std::endl;
+	if (argc < 2) {
+		std::cout << "Specify port for the server!" << std::endl;
 		return -1;
 	}
 
-	std::string const ipAddress = std::string(argv[1]);
-	int const port = std::stoi(std::string(argv[2]));
-
-	boost::asio::io_service io_service;
-
-	udp::socket socket(io_service);
-	udp::endpoint remote_endpoint;
+	int const port = std::stoi(std::string(argv[1]));
 
 	try {
-		remote_endpoint = udp::endpoint(address::from_string(ipAddress), port);
-		socket.open(udp::v4());
+		boost::asio::io_service io_service;
+
+		udp::socket socket(io_service, udp::endpoint(udp::v4(), port));
+
+		while (true)
+		{
+			boost::array<char, 1> recv_buf;
+			udp::endpoint remote_endpoint;
+			boost::system::error_code err;
+
+			std::cout << "Listening on : " << socket.local_endpoint() << std::endl;
+
+			socket.receive_from(boost::asio::buffer(recv_buf), remote_endpoint, 0, err);
+
+			if (err.failed()) {
+				std::cout << "Error occured when writing to socket: " << err.to_string() << std::endl;
+				continue;
+			}
+
+			std::cout << remote_endpoint << " connected." << std::endl;
+
+			char buffer[BUFFER_SIZE];
+			int fd = open("/dev/daqdrv", O_RDONLY);
+			if (fd == -1) {
+				std::cout << "Error occured when opening /dev/daqdrv: " << errno << std::endl;
+				return -1;
+			}
+
+			ssize_t dataRead = 0;
+			int nullCount = 0;
+			while (true) {
+				dataRead = read(fd, buffer, BUFFER_SIZE);
+
+				if (dataRead == -1) {
+					if (errno == EAGAIN) {
+						nullCount++;
+			
+						if (nullCount == TIMEOUT) {
+							std::cout << TIMEOUT << " consecutive attempts to read failed, exiting." << std::endl;
+							break;
+						} else {
+							std::this_thread::sleep_for(
+								std::chrono::microseconds(200));
+						}
+					} else {
+						std::cout << "Error occured when reading /dev/daqdrv: " << errno << std::endl;
+						break;
+					}
+				} else if (dataRead > 0) {
+
+					try {
+						auto sent = socket.send_to(boost::asio::buffer(buffer, BUFFER_SIZE), remote_endpoint, 0, err);
+					
+						if (err.failed()) {
+							std::cout << "Error occured when writing to socket: " << err.to_string() << std::endl;
+							break;
+						}
+
+						if (sent != BUFFER_SIZE) {
+							std::cout << "Didn't send full buffer: " << sent << std::endl;
+							break;
+						}
+					} catch (...) {
+						std::cout << "Error on socket send" << std::endl;
+						std::cout << boost::current_exception_diagnostic_information() << std::endl;
+						break;
+					}
+
+					nullCount = 0;
+				}
+			}
+
+			close(fd);
+			socket.close();
+		}
 	} catch (...) {
-		std::cout << "Error on socket init" << std::endl;
+		std::cout << "Error!" << std::endl;
 		std::cout << boost::current_exception_diagnostic_information() << std::endl;
 		return -1;
 	}
 
-	char buffer[BUFFER_SIZE];
-
-	int fd = open("/dev/daqdrv", O_RDONLY);
-	if (fd == -1) {
-		std::cout << "Error occured when opening /dev/daqdrv: " << errno << std::endl;
-		return -1;
-	}
-
-	ssize_t dataRead = 0;
-
-	int nullCount = 0;
-	while (true) {
-		dataRead = read(fd, buffer, BUFFER_SIZE);
-
-		if (dataRead == -1) {
-			if (errno == EAGAIN) {
-				nullCount++;
-	
-				if (nullCount == TIMEOUT) {
-					std::cout << TIMEOUT << " consecutive attempts to read failed, exiting." << std::endl;
-					break;
-				} else {
-					std::this_thread::sleep_for(
-						std::chrono::microseconds(500));
-				}
-			} else {
-				std::cout << "Error occured when reading /dev/daqdrv: " << errno << std::endl;
-				break;
-			}
-		} else if (dataRead > 0) {
-			boost::system::error_code err;
-
-			try {
-				auto sent = socket.send_to(boost::asio::buffer(buffer, BUFFER_SIZE), remote_endpoint, 0, err);
-			
-				if (err.failed()) {
-					std::cout << "Error occured when writing to socket: " << err.to_string() << std::endl;
-					break;
-				}
-
-				if (sent != BUFFER_SIZE) {
-					std::cout << "Didn't send full buffer: " << sent << std::endl;
-					break;
-				}
-			} catch (...) {
-				std::cout << "Error on socket send" << std::endl;
-				std::cout << boost::current_exception_diagnostic_information() << std::endl;
-				break;
-			}
-
-			nullCount = 0;
-		}
-	}
-
-	close(fd);
-	socket.close();
 	return 0;
 }
 

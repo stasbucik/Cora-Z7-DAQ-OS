@@ -49,7 +49,7 @@
 
 int main(int argc, char *argv[])
 {
-	using boost::asio::ip::udp;
+	using boost::asio::ip::tcp;
 
 	if (argc < 2) {
 		std::cout << "Specify port for the server!" << std::endl;
@@ -61,24 +61,17 @@ int main(int argc, char *argv[])
 	try {
 		boost::asio::io_service io_service;
 
-		udp::socket socket(io_service, udp::endpoint(udp::v4(), port));
+		tcp::endpoint endpoint = tcp::endpoint(tcp::v4(), port);
+		tcp::acceptor acceptor(io_service, endpoint);
+		tcp::socket socket(io_service);
 
 		while (true)
 		{
-			boost::array<char, 1> recv_buf;
-			udp::endpoint remote_endpoint;
-			boost::system::error_code err;
+			std::cout << "Listening on : " << endpoint << std::endl;
 
-			std::cout << "Listening on : " << socket.local_endpoint() << std::endl;
+			acceptor.accept(socket);
 
-			socket.receive_from(boost::asio::buffer(recv_buf), remote_endpoint, 0, err);
-
-			if (err.failed()) {
-				std::cout << "Error occured when writing to socket: " << err.to_string() << std::endl;
-				continue;
-			}
-
-			std::cout << remote_endpoint << " connected." << std::endl;
+			std::cout << socket.remote_endpoint() << " connected." << std::endl;
 
 			char buffer[BUFFER_SIZE];
 			int fd = open("/dev/daqdrv", O_RDONLY);
@@ -110,7 +103,8 @@ int main(int argc, char *argv[])
 				} else if (dataRead > 0) {
 
 					try {
-						auto sent = socket.send_to(boost::asio::buffer(buffer, BUFFER_SIZE), remote_endpoint, 0, err);
+						boost::system::error_code err;
+						auto sent = socket.send(boost::asio::buffer(buffer, BUFFER_SIZE), 0, err);
 					
 						if (err.failed()) {
 							std::cout << "Error occured when writing to socket: " << err.to_string() << std::endl;

@@ -33,8 +33,8 @@
 #include <iostream>
 #include <chrono>
 #include <thread>
-#include <cmath>
 #include <string>
+#include <cstdint>
 
 #include <fcntl.h>
 #include <errno.h>
@@ -44,8 +44,161 @@
 #include <boost/array.hpp>
 #include <boost/exception/diagnostic_information.hpp>
 
-#define TIMEOUT 50
-#define BUFFER_SIZE 256
+#define MAX_RETRY 50
+
+#define PACKET_SIZE_TYPE sizeof(uint8_t)
+#define PACKET_SIZE_COUNTER sizeof(uint16_t)
+#define PACKET_SIZE_DATA 256
+#define PACKET_SIZE PACKET_SIZE_TYPE + PACKET_SIZE_COUNTER + PACKET_SIZE_DATA
+
+#define PACKET_OFFSET_TYPE 0
+#define PACKET_OFFSET_COUNTER PACKET_OFFSET_TYPE + PACKET_SIZE_TYPE
+#define PACKET_OFFSET_DATA PACKET_OFFSET_COUNTER + PACKET_SIZE_COUNTER
+
+#define PACKET_TYPE_CONNECT 0
+#define PACKET_TYPE_DATA 1
+
+int waitForConnection(boost::asio::ip::udp::socket &socket,
+	boost::asio::ip::udp::endpoint &remote_endpoint)
+{
+	try {
+
+		boost::array<char, 1> recv_buf;
+		boost::system::error_code err;
+
+		std::cout << "Listening on : " << socket.local_endpoint() << std::endl;
+
+		socket.receive_from(boost::asio::buffer(recv_buf), remote_endpoint, 0, err);
+
+		if (err.failed()) {
+			std::cout << "Error occured when reading from socket: " << err.to_string() << std::endl;
+			return -2;
+		}
+
+		if (recv_buf[0] != PACKET_TYPE_CONNECT) {
+			std::cout << "Received packet not connect packet." << std::endl;
+			return -2;
+		}
+
+		std::cout << remote_endpoint << " connected." << std::endl;
+
+	} catch (...) {
+		std::cout << "Error!" << std::endl;
+		std::cout << boost::current_exception_diagnostic_information() << std::endl;
+		return -1;
+	}
+
+	return 0;
+}
+
+int waitForAck(boost::asio::ip::udp::socket &socket,
+	boost::asio::ip::udp::endpoint &remote_endpoint,
+	boost::asio::io_context &io_context)
+{
+	try {
+		boost::array<char, 1> recv_buf;
+		boost::system::error_code err;
+		std::size_t length = 0;
+
+		socket.async_receive_from(boost::asio::buffer(recv_buf), remote_endpoint, 0,
+			[&err, &length](const boost::system::error_code &error,
+				std::size_t bytes_transferred)
+			{
+				err = error;
+				length = bytes_transferred;
+			});
+
+		io_context.restart();
+		io_context.run_for(std::chrono::milliseconds(1000));
+		if (!io_context.stopped()) {
+			socket.cancel();
+			std::cout << "Timeout reached when waiting for ACK. Dropping client." << std::endl;
+			return -1;
+		}
+
+		if (err.failed()) {
+			std::cout << "Error occured when reading from socket: " << err.to_string() << std::endl;
+			return -1;
+		}
+
+		if (length != 1) {
+			std::cout << "Did not receive packet of length 1." << std::endl;
+			return -1;
+		}
+
+		if (recv_buf[0] != PACKET_TYPE_ACK) {
+			std::cout << "Received packet not ACK packet." << std::endl;
+			return -1;
+		}
+	} catch (...) {
+		std::cout << "Error!" << std::endl;
+		std::cout << boost::current_exception_diagnostic_information() << std::endl;
+		return -1;
+	}
+
+	return 0;
+}
+
+void sendLoop(boost::asio::ip::udp::socket &socket,
+	boost::asio::ip::udp::endpoint &remote_endpoint,
+	int driver_fd)
+{
+	char packet_buffer[PACKET_SIZE];
+	ssize_t dataRead = 0;
+	uint32_t retryCount = 0;
+	uint16_t packetCounter = 0;
+
+	while (true) {
+		dataRead = read(driver_fd, packet_buffer + PACKET_OFFSET_DATA, PACKET_SIZE_DATA);
+
+		if (dataRead == -1) {
+			if (errno != EAGAIN) {
+				std::cout << "Error occured when reading /dev/daqdrv: " << errno << std::endl;
+				break;
+			} else {
+				retryCount++;
+	
+				if (retryCount == MAX_RETRY) {
+					std::cout << MAX_RETRY << " consecutive attempts to read failed, exiting." << std::endl;
+					break;
+				} else {
+					std::this_thread::sleep_for(
+						std::chrono::microseconds(200));
+				}
+			}
+		} else if (dataRead > 0) {
+
+			try {
+				uint8_t *pckt_type = (uint8_t *)((void *)(packet_buffer) + PACKET_OFFSET_TYPE);
+				*pckt_type = PACKET_TYPE_DATA;
+
+				uint16_t *pckt_counter = (uint16_t *)((void *)(packet_buffer) + PACKET_OFFSET_COUNTER);
+				*pckt_counter = packetCounter;
+
+				boost::system::error_code err;	
+				auto sent = socket.send_to(boost::asio::buffer(packet_buffer, PACKET_SIZE), remote_endpoint, 0, err);
+			
+				if (err.failed()) {
+					std::cout << "Error occured when writing to socket: " << err.to_string() << std::endl;
+					break;
+				}
+
+				if (sent != PACKET_SIZE) {
+					std::cout << "Didn't send full packet: " << sent << std::endl;
+					break;
+				}
+
+				packetCounter++;
+			} catch (...) {
+				std::cout << "Error on socket send" << std::endl;
+				std::cout << boost::current_exception_diagnostic_information() << std::endl;
+				break;
+			}
+
+			retryCount = 0;
+		}
+	}
+}
 
 int main(int argc, char *argv[])
 {
@@ -59,81 +212,34 @@ int main(int argc, char *argv[])
 	int const port = std::stoi(std::string(argv[1]));
 
 	try {
-		boost::asio::io_service io_service;
+		boost::asio::io_context io_context;
 
-		udp::socket socket(io_service, udp::endpoint(udp::v4(), port));
+		udp::socket socket(io_context, udp::endpoint(udp::v4(), port));
+		udp::endpoint remote_endpoint;
 
 		while (true)
 		{
-			boost::array<char, 1> recv_buf;
-			udp::endpoint remote_endpoint;
-			boost::system::error_code err;
+			int ret_wait_connect = waitForConnection(socket, remote_endpoint);
 
-			std::cout << "Listening on : " << socket.local_endpoint() << std::endl;
-
-			socket.receive_from(boost::asio::buffer(recv_buf), remote_endpoint, 0, err);
-
-			if (err.failed()) {
-				std::cout << "Error occured when writing to socket: " << err.to_string() << std::endl;
+			if (ret_wait_connect == -1) {
+				break;
+			} else if (ret_wait_connect == -2) {
 				continue;
 			}
 
-			std::cout << remote_endpoint << " connected." << std::endl;
-
-			char buffer[BUFFER_SIZE];
 			int fd = open("/dev/daqdrv", O_RDONLY);
 			if (fd == -1) {
 				std::cout << "Error occured when opening /dev/daqdrv: " << errno << std::endl;
-				return -1;
+				break;
 			}
 
-			ssize_t dataRead = 0;
-			int nullCount = 0;
-			while (true) {
-				dataRead = read(fd, buffer, BUFFER_SIZE);
-
-				if (dataRead == -1) {
-					if (errno == EAGAIN) {
-						nullCount++;
-			
-						if (nullCount == TIMEOUT) {
-							std::cout << TIMEOUT << " consecutive attempts to read failed, exiting." << std::endl;
-							break;
-						} else {
-							std::this_thread::sleep_for(
-								std::chrono::microseconds(200));
-						}
-					} else {
-						std::cout << "Error occured when reading /dev/daqdrv: " << errno << std::endl;
-						break;
-					}
-				} else if (dataRead > 0) {
-
-					try {
-						auto sent = socket.send_to(boost::asio::buffer(buffer, BUFFER_SIZE), remote_endpoint, 0, err);
-					
-						if (err.failed()) {
-							std::cout << "Error occured when writing to socket: " << err.to_string() << std::endl;
-							break;
-						}
-
-						if (sent != BUFFER_SIZE) {
-							std::cout << "Didn't send full buffer: " << sent << std::endl;
-							break;
-						}
-					} catch (...) {
-						std::cout << "Error on socket send" << std::endl;
-						std::cout << boost::current_exception_diagnostic_information() << std::endl;
-						break;
-					}
-
-					nullCount = 0;
-				}
-			}
+			sendLoop(socket, remote_endpoint, fd);
 
 			close(fd);
-			socket.close();
 		}
+
+	socket.close();
+
 	} catch (...) {
 		std::cout << "Error!" << std::endl;
 		std::cout << boost::current_exception_diagnostic_information() << std::endl;

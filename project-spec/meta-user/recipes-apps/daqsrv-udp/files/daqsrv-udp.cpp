@@ -126,10 +126,10 @@ int waitForAck(boost::asio::ip::udp::socket &socket,
 			return -1;
 		}
 
-		if (recv_buf[0] != PACKET_TYPE_ACK) {
-			std::cout << "Received packet not ACK packet." << std::endl;
-			return -1;
-		}
+		//if (recv_buf[0] != PACKET_TYPE_ACK) {
+		//	std::cout << "Received packet not ACK packet." << std::endl;
+		//	return -1;
+		//}
 	} catch (...) {
 		std::cout << "Error!" << std::endl;
 		std::cout << boost::current_exception_diagnostic_information() << std::endl;

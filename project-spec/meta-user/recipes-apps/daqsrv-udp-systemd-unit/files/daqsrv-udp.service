@@ -1,0 +1,12 @@
+[Unit]
+Description=DAQ UDP server
+After=network.target
+
+[Service]
+ExecStart=/usr/bin/daqsrv-udp 44444
+Type=simple
+Restart=always
+
+
+[Install]
+WantedBy=multi-user.target

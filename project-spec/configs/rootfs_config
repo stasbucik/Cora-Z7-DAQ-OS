@@ -3772,8 +3772,10 @@ CONFIG_Init-manager-systemd=y
 CONFIG_daqdrv=y
 CONFIG_daqsrv-tcp=y
 CONFIG_daqsrv-udp=y
+CONFIG_daqsrv-udp-systemd-unit=y
 CONFIG_gpio-demo=y
 CONFIG_nano=y
+CONFIG_packagegroup-daq-debug-tools=y
 CONFIG_peekpoke=y
 CONFIG_test-scripts=y
 

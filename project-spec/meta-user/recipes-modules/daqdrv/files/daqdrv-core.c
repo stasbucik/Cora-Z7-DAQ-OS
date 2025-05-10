@@ -27,9 +27,6 @@
 #include <linux/io.h>
 #include <linux/interrupt.h>
 #include <linux/cdev.h>
-#include <linux/sysfs.h>
-#include <linux/kobject.h>
-#include <linux/spinlock.h>
 
 #include <linux/of_address.h>
 #include <linux/of_device.h>
@@ -95,26 +92,7 @@ struct daqdrv_local {
 	struct kfifo_iomod fifo;
 	bool overflowing;
 	bool prev_overflowing;
-	struct kobject *module_object;
 };
-
-static bool dataReady;
-
-DEFINE_SPINLOCK(sl_dataReady);
-
-static ssize_t dataReady_show(struct kobject *kobj, struct kobj_attribute *attr, char *buf)
-{
-	if (dataReady) {
-		buf[0] = '1';
-		buf[1] = 0;
-	} else {
-		buf[0] = '0';
-		buf[1] = 0;
-	}
-	return 1;
-}
-
-static struct kobj_attribute dataReady_attribute = __ATTR_RO(dataReady);
 
 static irqreturn_t daqdrv_irq(int irq, void *lp)
 {
@@ -144,11 +122,6 @@ static irqreturn_t daqdrv_irq(int irq, void *lp)
 		if (REG_GET_BIT(stat_reg, OVERWRITE_BIT)) {
 			printk("FPGA buffer might be overwritten, IRQ was too slow!");
 		}
-
-		unsigned long flags;
-		spin_lock_irqsave(&sl_dataReady, flags);
-		dataReady = true;
-		spin_unlock_irqrestore(&sl_dataReady, flags);
 	}
 	return IRQ_HANDLED;
 }
@@ -184,11 +157,6 @@ static int daqdrv_release(struct inode *inode, struct file *file)
 	REG_UNSET_BIT(ctrl_reg, ADC_RUN_BIT);
 	REG_UNSET_BIT(ctrl_reg, DAC_RUN_BIT);
 	iowrite32(ctrl_reg, lp->ctrl_base_addr);
-
-	unsigned long flags;
-	spin_lock_irqsave(&sl_dataReady, flags);
-	dataReady = false;
-	spin_unlock_irqrestore(&sl_dataReady, flags);
 
 	kfifo_iomod_reset_out(&(lp->fifo));
 	lp->overflowing = false;
@@ -230,13 +198,6 @@ static ssize_t daqdrv_read(struct file *filp, char __user *buffer, size_t length
 	if (ret_copy) {
 		printk("EFAULT when copying to userspace!");
 		return ret_copy;
-	}
-
-	if (actual_len == availible_data) {
-		unsigned long flags;
-		spin_lock_irqsave(&sl_dataReady, flags);
-		dataReady = false;
-		spin_unlock_irqrestore(&sl_dataReady, flags);
 	}
 
 	return actual_len;
@@ -296,9 +257,6 @@ static int daqdrv_probe(struct platform_device *pdev)
 	lp->ctrl_mem_end = r_mem_ctrl->end;
 	lp->stat_mem_start = r_mem_stat->start;
 	lp->stat_mem_end = r_mem_stat->end;
-	dataReady = false;
-
-	spin_lock_init(&sl_dataReady);
 
 	// request memory region for buffer
 	if (!request_mem_region(lp->buffer_mem_start,
@@ -386,21 +344,6 @@ static int daqdrv_probe(struct platform_device *pdev)
 		goto error9;
 	}
 
-	// create sysfs files
-	lp->module_object = kobject_create_and_add(DRIVER_NAME, kernel_kobj);
-	if (!lp->module_object) {
-		dev_err(dev, "Kobject creation failed.\n");
-		rc = -ENOMEM;
-		goto error10;
-	}
-
-	int ret_sysfs_create_file = sysfs_create_file(lp->module_object, &dataReady_attribute.attr);
-	if (ret_sysfs_create_file) {
-		dev_err(dev, "Sysfs file creation failed with %d.\n", ret_sysfs_create_file);
-		rc = ret_sysfs_create_file;
-		goto error11;
-	}
-
 	// get interrupt
 	int n_irq = platform_get_irq_optional(pdev, 0);
 	if (n_irq < 0) {
@@ -423,7 +366,7 @@ static int daqdrv_probe(struct platform_device *pdev)
 	if (rc) {
 		dev_err(dev, "daqdrv: Could not allocate interrupt %d.\n",
 			lp->irq);
-		goto error12;
+		goto error10;
 	}
 
 	dev_info(dev,"daqdrv buffer at 0x%08x mapped to 0x%08x, irq=%d\n",
@@ -437,11 +380,8 @@ static int daqdrv_probe(struct platform_device *pdev)
 		(unsigned int __force)lp->stat_mem_start,
 		(unsigned int __force)lp->stat_base_addr);
 	return 0;
-error12:
-	free_irq(lp->irq, lp);
-error11:
-	kobject_put(lp->module_object);
 error10:
+	free_irq(lp->irq, lp);
 	kfifo_iomod_free(&(lp->fifo));
 error9:
 	device_destroy(cls, dvt);
@@ -473,7 +413,6 @@ static int daqdrv_remove(struct platform_device *pdev)
 	struct device *dev = &pdev->dev;
 	struct daqdrv_local *lp = dev_get_drvdata(dev);
 	free_irq(lp->irq, lp);
-	kobject_put(lp->module_object);
 	kfifo_iomod_free(&(lp->fifo));
 
 	device_destroy(cls, dvt);

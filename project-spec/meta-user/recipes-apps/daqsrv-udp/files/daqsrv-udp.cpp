@@ -56,9 +56,12 @@
 #define PACKET_OFFSET_DATA PACKET_OFFSET_COUNTER + PACKET_SIZE_COUNTER
 
 #define PACKET_TYPE_CONNECT 0
-#define PACKET_TYPE_DATA 1
+#define PACKET_TYPE_DISCONNECT 1
+#define PACKET_TYPE_DATA 2
 
-int waitForConnection(boost::asio::ip::udp::socket &socket,
+enum class ConnectReturnType { OK, ERR_RECOVERABLE, ERR_UNRECOVERABLE };
+
+ConnectReturnType waitForConnection(boost::asio::ip::udp::socket &socket,
 	boost::asio::ip::udp::endpoint &remote_endpoint)
 {
 	try {
@@ -72,12 +75,12 @@ int waitForConnection(boost::asio::ip::udp::socket &socket,
 
 		if (err.failed()) {
 			std::cout << "Error occured when reading from socket: " << err.to_string() << std::endl;
-			return -2;
+			return ConnectReturnType::ERR_UNRECOVERABLE;
 		}
 
 		if (recv_buf[0] != PACKET_TYPE_CONNECT) {
 			std::cout << "Received packet not connect packet." << std::endl;
-			return -2;
+			return ConnectReturnType::ERR_UNRECOVERABLE;
 		}
 
 		std::cout << remote_endpoint << " connected." << std::endl;
@@ -85,15 +88,19 @@ int waitForConnection(boost::asio::ip::udp::socket &socket,
 	} catch (...) {
 		std::cout << "Error!" << std::endl;
 		std::cout << boost::current_exception_diagnostic_information() << std::endl;
-		return -1;
+		return ConnectReturnType::ERR_UNRECOVERABLE;
 	}
 
-	return 0;
+	return ConnectReturnType::OK;
 }
 
-int waitForAck(boost::asio::ip::udp::socket &socket,
+enum class DisconnectReturnType { OK_DISCONNECT, OK_NO_EVENT, ERR };
+
+template<typename Rep, typename Period>
+DisconnectReturnType checkDisconnect(boost::asio::ip::udp::socket &socket,
 	boost::asio::ip::udp::endpoint &remote_endpoint,
-	boost::asio::io_context &io_context)
+	boost::asio::io_context &io_context,
+	std::chrono::duration<Rep, Period> timeout)
 {
 	try {
 		boost::array<char, 1> recv_buf;
@@ -109,38 +116,40 @@ int waitForAck(boost::asio::ip::udp::socket &socket,
 			});
 
 		io_context.restart();
-		io_context.run_for(std::chrono::milliseconds(1000));
+		io_context.run_for(timeout);
 		if (!io_context.stopped()) {
 			socket.cancel();
-			std::cout << "Timeout reached when waiting for ACK. Dropping client." << std::endl;
-			return -1;
+			// Nothing was received
+			return DisconnectReturnType::OK_NO_EVENT;
 		}
 
 		if (err.failed()) {
 			std::cout << "Error occured when reading from socket: " << err.to_string() << std::endl;
-			return -1;
+			return DisconnectReturnType::ERR;
 		}
 
 		if (length != 1) {
 			std::cout << "Did not receive packet of length 1." << std::endl;
-			return -1;
+			return DisconnectReturnType::ERR;
 		}
 
-		//if (recv_buf[0] != PACKET_TYPE_ACK) {
-		//	std::cout << "Received packet not ACK packet." << std::endl;
-		//	return -1;
-		//}
+		if (recv_buf[0] != PACKET_TYPE_DISCONNECT) {
+			std::cout << "Received packet not disconnect packet." << std::endl;
+			return DisconnectReturnType::ERR;
+		}
 	} catch (...) {
 		std::cout << "Error!" << std::endl;
 		std::cout << boost::current_exception_diagnostic_information() << std::endl;
-		return -1;
+		return DisconnectReturnType::ERR;
 	}
 
-	return 0;
+	std::cout << remote_endpoint << " disconnected." << std::endl;
+	return DisconnectReturnType::OK_DISCONNECT;
 }
 
 void sendLoop(boost::asio::ip::udp::socket &socket,
 	boost::asio::ip::udp::endpoint &remote_endpoint,
+	boost::asio::io_context &io_context,
 	int driver_fd)
 {
 	char packet_buffer[PACKET_SIZE];
@@ -149,6 +158,13 @@ void sendLoop(boost::asio::ip::udp::socket &socket,
 	uint16_t packetCounter = 0;
 
 	while (true) {
+		auto ret_disconnect = checkDisconnect(socket, remote_endpoint, io_context, std::chrono::microseconds(100));
+
+		if (ret_disconnect == DisconnectReturnType::OK_DISCONNECT ||
+			ret_disconnect == DisconnectReturnType::ERR) {
+			break;
+		}
+
 		dataRead = read(driver_fd, packet_buffer + PACKET_OFFSET_DATA, PACKET_SIZE_DATA);
 
 		if (dataRead == -1) {
@@ -219,11 +235,11 @@ int main(int argc, char *argv[])
 
 		while (true)
 		{
-			int ret_wait_connect = waitForConnection(socket, remote_endpoint);
+			auto ret_wait_connect = waitForConnection(socket, remote_endpoint);
 
-			if (ret_wait_connect == -1) {
+			if (ret_wait_connect == ConnectReturnType::ERR_UNRECOVERABLE) {
 				break;
-			} else if (ret_wait_connect == -2) {
+			} else if (ret_wait_connect == ConnectReturnType::ERR_RECOVERABLE) {
 				continue;
 			}
 
@@ -233,7 +249,7 @@ int main(int argc, char *argv[])
 				break;
 			}
 
-			sendLoop(socket, remote_endpoint, fd);
+			sendLoop(socket, remote_endpoint, io_context, fd);
 
 			close(fd);
 		}

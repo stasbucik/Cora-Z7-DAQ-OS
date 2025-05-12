@@ -35,6 +35,8 @@
 #include <thread>
 #include <string>
 #include <cstdint>
+#include <functional>
+#include <memory>
 
 #include <fcntl.h>
 #include <errno.h>
@@ -59,161 +61,185 @@
 #define PACKET_TYPE_DISCONNECT 1
 #define PACKET_TYPE_DATA 2
 
-enum class ConnectReturnType { OK, ERR_RECOVERABLE, ERR_UNRECOVERABLE };
+void onConnect(boost::asio::ip::udp::socket &socket,
+	boost::asio::ip::udp::endpoint &remote_endpoint,
+	boost::array<char, 1> &recv_buf);
 
-ConnectReturnType waitForConnection(boost::asio::ip::udp::socket &socket,
-	boost::asio::ip::udp::endpoint &remote_endpoint)
+typedef std::function<void(
+	boost::asio::ip::udp::socket &,
+	boost::asio::ip::udp::endpoint &,
+	boost::array<char, 1> &)> onConnectSignature;
+
+static bool connected = false;
+
+void waitForConnection(boost::asio::ip::udp::socket &socket,
+	boost::asio::ip::udp::endpoint &remote_endpoint,
+	boost::array<char, 1> &recv_buf,
+	std::shared_ptr<onConnectSignature> completion_handler_ptr)
 {
 	try {
-
-		boost::array<char, 1> recv_buf;
-		boost::system::error_code err;
 
 		std::cout << "Listening on : " << socket.local_endpoint() << std::endl;
 
-		socket.receive_from(boost::asio::buffer(recv_buf), remote_endpoint, 0, err);
-
-		if (err.failed()) {
-			std::cout << "Error occured when reading from socket: " << err.to_string() << std::endl;
-			return ConnectReturnType::ERR_UNRECOVERABLE;
-		}
-
-		if (recv_buf[0] != PACKET_TYPE_CONNECT) {
-			std::cout << "Received packet not connect packet." << std::endl;
-			return ConnectReturnType::ERR_UNRECOVERABLE;
-		}
-
-		std::cout << remote_endpoint << " connected." << std::endl;
-
-	} catch (...) {
-		std::cout << "Error!" << std::endl;
-		std::cout << boost::current_exception_diagnostic_information() << std::endl;
-		return ConnectReturnType::ERR_UNRECOVERABLE;
-	}
-
-	return ConnectReturnType::OK;
-}
-
-enum class DisconnectReturnType { OK_DISCONNECT, OK_NO_EVENT, ERR };
-
-template<typename Rep, typename Period>
-DisconnectReturnType checkDisconnect(boost::asio::ip::udp::socket &socket,
-	boost::asio::ip::udp::endpoint &remote_endpoint,
-	boost::asio::io_context &io_context,
-	std::chrono::duration<Rep, Period> timeout)
-{
-	try {
-		boost::array<char, 1> recv_buf;
-		boost::system::error_code err;
-		std::size_t length = 0;
-
 		socket.async_receive_from(boost::asio::buffer(recv_buf), remote_endpoint, 0,
-			[&err, &length](const boost::system::error_code &error,
-				std::size_t bytes_transferred)
+			[&recv_buf, completion_handler_ptr, &socket, &remote_endpoint]
+			(const boost::system::error_code &err, std::size_t bytes_transferred)
 			{
-				err = error;
-				length = bytes_transferred;
+				if (err.failed()) {
+					std::cout << "Error occured when reading from socket: " << err.to_string() << std::endl;
+					return waitForConnection(socket, remote_endpoint, recv_buf, std::make_shared<onConnectSignature>(onConnect));
+				}
+
+				if (bytes_transferred != 1) {
+					std::cout << "Didn't receive 1 byte!" << std::endl;
+					return waitForConnection(socket, remote_endpoint, recv_buf, std::make_shared<onConnectSignature>(onConnect));
+				}
+
+				if (recv_buf[0] != PACKET_TYPE_CONNECT) {
+					std::cout << "Received packet not connect packet." << std::endl;
+					return waitForConnection(socket, remote_endpoint, recv_buf, std::make_shared<onConnectSignature>(onConnect));
+				}
+
+				std::cout << remote_endpoint << " connected." << std::endl;
+				connected = true;
+				return (*completion_handler_ptr)(socket, remote_endpoint, recv_buf);
+
 			});
 
-		io_context.restart();
-		io_context.run_for(timeout);
-		if (!io_context.stopped()) {
-			socket.cancel();
-			// Nothing was received
-			return DisconnectReturnType::OK_NO_EVENT;
-		}
-
-		if (err.failed()) {
-			std::cout << "Error occured when reading from socket: " << err.to_string() << std::endl;
-			return DisconnectReturnType::ERR;
-		}
-
-		if (length != 1) {
-			std::cout << "Did not receive packet of length 1." << std::endl;
-			return DisconnectReturnType::ERR;
-		}
-
-		if (recv_buf[0] != PACKET_TYPE_DISCONNECT) {
-			std::cout << "Received packet not disconnect packet." << std::endl;
-			return DisconnectReturnType::ERR;
-		}
 	} catch (...) {
 		std::cout << "Error!" << std::endl;
 		std::cout << boost::current_exception_diagnostic_information() << std::endl;
-		return DisconnectReturnType::ERR;
+		return;
 	}
-
-	std::cout << remote_endpoint << " disconnected." << std::endl;
-	return DisconnectReturnType::OK_DISCONNECT;
 }
 
-void sendLoop(boost::asio::ip::udp::socket &socket,
+void checkDisconnect(boost::asio::ip::udp::socket &socket,
 	boost::asio::ip::udp::endpoint &remote_endpoint,
-	boost::asio::io_context &io_context,
-	int driver_fd)
+	boost::array<char, 1> &recv_buf,
+	std::shared_ptr<std::function<void(void)>> completion_handler_ptr)
 {
+	try {
+
+		socket.async_receive_from(boost::asio::buffer(recv_buf), remote_endpoint, 0,
+			[&recv_buf, &socket, &remote_endpoint, completion_handler_ptr]
+			(const boost::system::error_code &err, std::size_t bytes_transferred)
+			{
+				if (err.failed()) {
+					std::cout << "Error occured when reading from socket: " << err.to_string() << std::endl;
+					return waitForConnection(socket, remote_endpoint, recv_buf, std::make_shared<onConnectSignature>(onConnect));
+				}
+
+				if (bytes_transferred != 1) {
+					std::cout << "Did not receive packet of length 1." << std::endl;
+					return;
+				}
+
+				if (recv_buf[0] != PACKET_TYPE_DISCONNECT) {
+					std::cout << "Received packet not disconnect packet." << std::endl;
+					return;
+				}
+
+				std::cout << remote_endpoint << " disconnected." << std::endl;
+				connected = false;
+				return (*completion_handler_ptr)();
+			});
+
+
+	} catch (...) {
+		std::cout << "Error!" << std::endl;
+		std::cout << boost::current_exception_diagnostic_information() << std::endl;
+		return;
+	}
+}
+
+void sendData(
+	boost::asio::ip::udp::socket &socket,
+	boost::asio::ip::udp::endpoint &remote_endpoint,
+	int driver_fd,
+	uint16_t packetCounter)
+{
+	if (!connected) {
+		return;
+	}
+
 	char packet_buffer[PACKET_SIZE];
 	ssize_t dataRead = 0;
 	uint32_t retryCount = 0;
-	uint16_t packetCounter = 0;
 
 	while (true) {
-		auto ret_disconnect = checkDisconnect(socket, remote_endpoint, io_context, std::chrono::microseconds(100));
-
-		if (ret_disconnect == DisconnectReturnType::OK_DISCONNECT ||
-			ret_disconnect == DisconnectReturnType::ERR) {
-			break;
-		}
 
 		dataRead = read(driver_fd, packet_buffer + PACKET_OFFSET_DATA, PACKET_SIZE_DATA);
 
 		if (dataRead == -1) {
 			if (errno != EAGAIN) {
 				std::cout << "Error occured when reading /dev/daqdrv: " << errno << std::endl;
-				break;
+				return;
 			} else {
 				retryCount++;
 	
 				if (retryCount == MAX_RETRY) {
 					std::cout << MAX_RETRY << " consecutive attempts to read failed, exiting." << std::endl;
-					break;
+					return;
 				} else {
 					std::this_thread::sleep_for(
 						std::chrono::microseconds(200));
 				}
 			}
 		} else if (dataRead > 0) {
-
-			try {
-				uint8_t *pckt_type = (uint8_t *)((void *)(packet_buffer) + PACKET_OFFSET_TYPE);
-				*pckt_type = PACKET_TYPE_DATA;
-
-				uint16_t *pckt_counter = (uint16_t *)((void *)(packet_buffer) + PACKET_OFFSET_COUNTER);
-				*pckt_counter = packetCounter;
-
-				boost::system::error_code err;	
-				auto sent = socket.send_to(boost::asio::buffer(packet_buffer, PACKET_SIZE), remote_endpoint, 0, err);
-			
-				if (err.failed()) {
-					std::cout << "Error occured when writing to socket: " << err.to_string() << std::endl;
-					break;
-				}
-
-				if (sent != PACKET_SIZE) {
-					std::cout << "Didn't send full packet: " << sent << std::endl;
-					break;
-				}
-
-				packetCounter++;
-			} catch (...) {
-				std::cout << "Error on socket send" << std::endl;
-				std::cout << boost::current_exception_diagnostic_information() << std::endl;
-				break;
-			}
-
-			retryCount = 0;
+			break;
 		}
 	}
+
+	try {
+		uint8_t *pckt_type = (uint8_t *)((void *)(packet_buffer) + PACKET_OFFSET_TYPE);
+		*pckt_type = PACKET_TYPE_DATA;
+
+		uint16_t *pckt_counter = (uint16_t *)((void *)(packet_buffer) + PACKET_OFFSET_COUNTER);
+		*pckt_counter = packetCounter;
+
+		boost::system::error_code err;	
+		socket.async_send_to(boost::asio::buffer(packet_buffer, PACKET_SIZE), remote_endpoint, 0,
+			[&socket, &remote_endpoint, driver_fd, packetCounter]
+			(const boost::system::error_code &err, std::size_t bytes_transferred)
+			{
+				if (err.failed()) {
+					std::cout << "Error occured when writing to socket: " << err.to_string() << std::endl;
+					return;
+				}
+
+				if (bytes_transferred != PACKET_SIZE) {
+					std::cout << "Didn't send full packet: " << bytes_transferred << std::endl;
+					return;
+				}
+
+				sendData(socket, remote_endpoint, driver_fd, packetCounter+1);
+			});
+	
+	} catch (...) {
+		std::cout << "Error on socket send" << std::endl;
+		std::cout << boost::current_exception_diagnostic_information() << std::endl;
+		return;
+	}
+}
+
+void onConnect(boost::asio::ip::udp::socket &socket,
+	boost::asio::ip::udp::endpoint &remote_endpoint,
+	boost::array<char, 1> &recv_buf)
+{
+	int fd = open("/dev/daqdrv", O_RDONLY);
+	if (fd == -1) {
+		std::cout << "Error occured when opening /dev/daqdrv: " << errno << std::endl;
+		return;
+	}
+
+	checkDisconnect(socket, remote_endpoint, recv_buf, std::make_shared<std::function<void(void)>>(
+		[fd, &socket, &remote_endpoint, &recv_buf]()
+		{
+			close(fd);
+			waitForConnection(socket, remote_endpoint, recv_buf, std::make_shared<onConnectSignature>(onConnect));
+		}));
+
+	sendData(socket, remote_endpoint, fd, 0);
 }
 
 int main(int argc, char *argv[])
@@ -233,28 +259,13 @@ int main(int argc, char *argv[])
 		udp::socket socket(io_context, udp::endpoint(udp::v4(), port));
 		udp::endpoint remote_endpoint;
 
-		while (true)
-		{
-			auto ret_wait_connect = waitForConnection(socket, remote_endpoint);
+		boost::array<char, 1> recv_buf;
 
-			if (ret_wait_connect == ConnectReturnType::ERR_UNRECOVERABLE) {
-				break;
-			} else if (ret_wait_connect == ConnectReturnType::ERR_RECOVERABLE) {
-				continue;
-			}
 
-			int fd = open("/dev/daqdrv", O_RDONLY);
-			if (fd == -1) {
-				std::cout << "Error occured when opening /dev/daqdrv: " << errno << std::endl;
-				break;
-			}
+		waitForConnection(socket, remote_endpoint, recv_buf, std::make_shared<onConnectSignature>(onConnect));
 
-			sendLoop(socket, remote_endpoint, io_context, fd);
-
-			close(fd);
-		}
-
-	socket.close();
+		io_context.run();
+		socket.close();
 
 	} catch (...) {
 		std::cout << "Error!" << std::endl;

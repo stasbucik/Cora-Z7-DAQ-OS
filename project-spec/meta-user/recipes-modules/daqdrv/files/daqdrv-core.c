@@ -147,6 +147,11 @@ static int daqdrv_open(struct inode *inode, struct file *file)
 }
 static int daqdrv_release(struct inode *inode, struct file *file)
 {
+	if (inode->i_cdev == NULL) {
+		printk("can't find chardev\n");
+		return -ENOTRECOVERABLE;
+	}
+
 	struct daqdrv_local *lp = container_of(inode->i_cdev, struct daqdrv_local, chardev);
 	if (lp == NULL) {
 		printk("drv data is null");
@@ -170,18 +175,18 @@ static ssize_t daqdrv_read(struct file *filp, char __user *buffer, size_t length
 {
 	if (filp->f_inode == NULL) {
 		printk("can't find inode\n");
-		return 0;
+		return -ENOTRECOVERABLE;
 	}
 
 	if (filp->f_inode->i_cdev == NULL) {
 		printk("can't find chardev\n");
-		return 0;
+		return -ENOTRECOVERABLE;
 	}
 
 	struct daqdrv_local *lp = container_of(filp->f_inode->i_cdev, struct daqdrv_local, chardev);
 	if (lp == NULL) {
 		printk("drv data is null\n");
-		return 0;
+		return -ENOTRECOVERABLE;
 	}
 
 	size_t availible_data = (size_t)kfifo_iomod_len(&(lp->fifo));

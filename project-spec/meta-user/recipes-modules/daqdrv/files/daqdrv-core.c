@@ -92,12 +92,17 @@ struct daqdrv_local {
 	struct kfifo_iomod fifo;
 	bool overflowing;
 	bool prev_overflowing;
+	bool allowed_to_read;
 };
 
 static irqreturn_t daqdrv_irq(int irq, void *lp)
 {
 	struct daqdrv_local *lpp = (struct daqdrv_local *)lp;
 	u32 availible = kfifo_iomod_avail(&(lpp->fifo));
+
+	if (lpp->allowed_to_read == false) {
+		return IRQ_HANDLED;
+	}
 
 	lpp->prev_overflowing = lpp->overflowing;
 
@@ -138,6 +143,13 @@ static int daqdrv_open(struct inode *inode, struct file *file)
 		printk("drv data is null\n");
 		return -ENOTRECOVERABLE;
 	}
+
+	kfifo_iomod_reset_out(&(lp->fifo));
+	lp->overflowing = false;
+	lp->prev_overflowing = false;
+
+	lp->allowed_to_read = true;
+	enable_irq(lp->irq);
 	
 	u32 ctrl_reg = ioread32(lp->ctrl_base_addr);
 	REG_SET_BIT(ctrl_reg, ADC_RUN_BIT);
@@ -157,6 +169,9 @@ static int daqdrv_release(struct inode *inode, struct file *file)
 		printk("drv data is null");
 		return -ENOTRECOVERABLE;
 	}
+	
+	lp->allowed_to_read = false;
+	disable_irq(lp->irq);
 	
 	u32 ctrl_reg = ioread32(lp->ctrl_base_addr);
 	REG_UNSET_BIT(ctrl_reg, ADC_RUN_BIT);
@@ -262,6 +277,7 @@ static int daqdrv_probe(struct platform_device *pdev)
 	lp->ctrl_mem_end = r_mem_ctrl->end;
 	lp->stat_mem_start = r_mem_stat->start;
 	lp->stat_mem_end = r_mem_stat->end;
+	lp->allowed_to_read = false;
 
 	// request memory region for buffer
 	if (!request_mem_region(lp->buffer_mem_start,
@@ -373,6 +389,7 @@ static int daqdrv_probe(struct platform_device *pdev)
 			lp->irq);
 		goto error10;
 	}
+	disable_irq(lp->irq);
 
 	dev_info(dev,"daqdrv buffer at 0x%08x mapped to 0x%08x, irq=%d\n",
 		(unsigned int __force)lp->buffer_mem_start,

@@ -2,7 +2,7 @@
 / {
     daq: daq@46000000 {
 		compatible = "stasbucik,daqdrv";
-		reg = <0x46000000 0x4000>, <0x43c00000 0x1000>, <0x43c10000 0x1000>;
+		reg = <0x46000000 0x4000>, <0x43c00000 0x1000>, <0x43c10000 0x1000>, <0x43c20000 0x800>;
 		interrupt-parent = <&intc>;
 		// 61 - 32 = 29(10) = 1D(16)
 		interrupts = <0x0 0x1D 0x1>;

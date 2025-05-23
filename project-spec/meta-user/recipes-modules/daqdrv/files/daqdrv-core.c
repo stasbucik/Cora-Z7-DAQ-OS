@@ -27,6 +27,8 @@
 #include <linux/io.h>
 #include <linux/interrupt.h>
 #include <linux/cdev.h>
+#include <linux/sysfs.h>
+#include <linux/kobject.h>
 
 #include <linux/of_address.h>
 #include <linux/of_device.h>
@@ -51,10 +53,39 @@ MODULE_DESCRIPTION
 
 #define OVERWRITE_BIT 0
 
+#define CLK_SOFT_RST_REG         0x0
+#define CLK_STAT_REG             0x4
+#define CLK_MONITOR_ERR_STAT_REG 0x8
+#define CLK_INTERRUPT_STAT_REG   0xC
+#define CLK_INTERRUPT_EN_REG     0x10
+#define CLK_CLK_CONF_REG_0       0x200
+#define CLK_CLK_CONF_REG_1       0x204
+#define CLK_CLK_CONF_REG_2       0x208
+#define CLK_CLK_CONF_REG_3       0x20C
+#define CLK_CLK_CONF_REG_4       0x210
+#define CLK_CLK_CONF_REG_23      0x25C
+
+#define SAMPLE_RATE_200KSPS 0x0
+#define SAMPLE_RATE_500KSPS 0x1
+#define SAMPLE_RATE_1MSPS   0x2
+#define SAMPLE_RATE_2MSPS   0x3
+
+#define SR_200KSPS_R0 0x00000801
+#define SR_200KSPS_R2 0x0000007d
+#define SR_500KSPS_R0 0x00000a01
+#define SR_500KSPS_R2 0x0001f43e
+#define SR_1MSPS_R0   0x00000a01
+#define SR_1MSPS_R2   0x0000fa1f
+#define SR_2MSPS_R0   0x00000a01
+#define SR_2MSPS_R2   0x0002710f
+
 #define REG_SET_BIT(reg, bit) reg = reg | (1u << bit)
 #define REG_UNSET_BIT(reg, bit) reg = reg & ~(1u << bit)
 #define REG_GET_BIT(reg, bit) ((reg & (1u << bit)) >> bit)
 
+static void sampleRate_release(struct kobject *kobj);
+static ssize_t sampleRate_store(struct kobject *kobj, struct kobj_attribute *attr, const char *buf, size_t count);
+static irqreturn_t daqdrv_irq(int irq, void *lp);
 static int daqdrv_open(struct inode *, struct file *);
 static int daqdrv_release(struct inode *, struct file *);
 static ssize_t daqdrv_read(struct file *, char __user *, size_t, loff_t *);
@@ -86,14 +117,85 @@ struct daqdrv_local {
 	unsigned long ctrl_mem_end;
 	unsigned long stat_mem_start;
 	unsigned long stat_mem_end;
+	unsigned long clk_mem_start;
+	unsigned long clk_mem_end;
 	void __iomem *buffer_base_addr;
 	void __iomem *ctrl_base_addr;
 	void __iomem *stat_base_addr;
+	void __iomem *clk_base_addr;
 	struct kfifo_iomod fifo;
+	struct kobject sampleRate_module_object;
 	bool overflowing;
 	bool prev_overflowing;
 	bool allowed_to_read;
 };
+
+static const struct kobj_type dynamic_kobj_ktype = {
+	.release	= sampleRate_release,
+	.sysfs_ops	= &kobj_sysfs_ops,
+};
+
+static void sampleRate_release(struct kobject *kobj)
+{
+	pr_debug("(%p): %s\n", kobj, __func__);
+}
+
+static u8 sampleRate;
+
+static ssize_t sampleRate_store(struct kobject *kobj, struct kobj_attribute *attr, const char *buf, size_t count)
+{
+	if (count < 1) {
+		return -EINVAL;
+	}
+
+	struct daqdrv_local *lp = container_of(kobj, struct daqdrv_local, sampleRate_module_object);
+	if (lp == NULL) {
+		printk("drv data is null\n");
+		return -ENOTRECOVERABLE;
+	}
+
+	if (lp->allowed_to_read == true) {
+		return -EBUSY;
+	}
+
+	unsigned long number = 0;
+	int ret_conversion = kstrtoul(buf, 10, &number);
+	if (ret_conversion) {
+		return ret_conversion;
+	}
+
+	if (number == SAMPLE_RATE_2MSPS) {
+		iowrite32(SR_2MSPS_R0, lp->clk_base_addr + CLK_CLK_CONF_REG_0);
+		iowrite32(SR_2MSPS_R2, lp->clk_base_addr + CLK_CLK_CONF_REG_2);
+	} else if(number == SAMPLE_RATE_1MSPS) {
+		iowrite32(SR_1MSPS_R0, lp->clk_base_addr + CLK_CLK_CONF_REG_0);
+		iowrite32(SR_1MSPS_R2, lp->clk_base_addr + CLK_CLK_CONF_REG_2);
+	} else if(number == SAMPLE_RATE_500KSPS) {
+		iowrite32(SR_500KSPS_R0, lp->clk_base_addr + CLK_CLK_CONF_REG_0);
+		iowrite32(SR_500KSPS_R2, lp->clk_base_addr + CLK_CLK_CONF_REG_2);
+	} else if(number == SAMPLE_RATE_200KSPS) {
+		iowrite32(SR_200KSPS_R0, lp->clk_base_addr + CLK_CLK_CONF_REG_0);
+		iowrite32(SR_200KSPS_R2, lp->clk_base_addr + CLK_CLK_CONF_REG_2);
+	} else {
+		return -EINVAL;
+	}
+
+	iowrite32(2, lp->clk_base_addr + CLK_CLK_CONF_REG_23); // use registers we just set instead of vivado generated settings
+	iowrite32(3, lp->clk_base_addr + CLK_CLK_CONF_REG_23); // apply
+
+	u32 clk_monitor_err_stat_reg = ioread32(lp->clk_base_addr + CLK_MONITOR_ERR_STAT_REG);
+
+	if (clk_monitor_err_stat_reg) {
+		printk("error configuring clock!");
+		printk("clk_monitor_err_stat_reg is %#010x\n", clk_monitor_err_stat_reg);
+		iowrite32(0, lp->clk_base_addr + CLK_CLK_CONF_REG_23); // fallback to vivado generated settings
+		iowrite32(1, lp->clk_base_addr + CLK_CLK_CONF_REG_23); // apply
+	}
+
+	return count;
+}
+
+static struct kobj_attribute sampleRate_attribute = __ATTR_WO(sampleRate);
 
 static irqreturn_t daqdrv_irq(int irq, void *lp)
 {
@@ -157,6 +259,7 @@ static int daqdrv_open(struct inode *inode, struct file *file)
 	iowrite32(ctrl_reg, lp->ctrl_base_addr);
 	return 0;
 }
+
 static int daqdrv_release(struct inode *inode, struct file *file)
 {
 	if (inode->i_cdev == NULL) {
@@ -186,6 +289,7 @@ static int daqdrv_release(struct inode *inode, struct file *file)
 	module_put(THIS_MODULE);
 	return 0;
 }
+
 static ssize_t daqdrv_read(struct file *filp, char __user *buffer, size_t length, loff_t *offset)
 {
 	if (filp->f_inode == NULL) {
@@ -235,6 +339,7 @@ static int daqdrv_probe(struct platform_device *pdev)
 	struct resource *r_mem_buff; /* IO mem resources */
 	struct resource *r_mem_ctrl; /* IO mem resources */
 	struct resource *r_mem_stat; /* IO mem resources */
+	struct resource *r_mem_clk; /* IO mem resources */
 	struct device *dev = &pdev->dev;
 	struct daqdrv_local *lp = NULL;
 	dev_t dvt;
@@ -264,6 +369,13 @@ static int daqdrv_probe(struct platform_device *pdev)
 		return -ENODEV;
 	}
 
+	// Get iospace for clk
+	r_mem_clk = platform_get_resource(pdev, IORESOURCE_MEM, 3);
+	if (!r_mem_clk) {
+		dev_err(dev, "invalid address for clk\n");
+		return -ENODEV;
+	}
+
 	// init and allocate daqdrv_local structure
 	lp = (struct daqdrv_local *) kmalloc(sizeof(struct daqdrv_local), GFP_KERNEL);
 	if (!lp) {
@@ -277,7 +389,10 @@ static int daqdrv_probe(struct platform_device *pdev)
 	lp->ctrl_mem_end = r_mem_ctrl->end;
 	lp->stat_mem_start = r_mem_stat->start;
 	lp->stat_mem_end = r_mem_stat->end;
+	lp->clk_mem_start = r_mem_clk->start;
+	lp->clk_mem_end = r_mem_clk->end;
 	lp->allowed_to_read = false;
+	sampleRate = SAMPLE_RATE_2MSPS;
 
 	// request memory region for buffer
 	if (!request_mem_region(lp->buffer_mem_start,
@@ -309,12 +424,22 @@ static int daqdrv_probe(struct platform_device *pdev)
 		goto error3;
 	}
 
+	// request memory region for clk
+	if (!request_mem_region(lp->clk_mem_start,
+				lp->clk_mem_end - lp->clk_mem_start + 1,
+				DRIVER_NAME)) {
+		dev_err(dev, "Couldn't lock memory region at %p\n",
+			(void *)lp->clk_mem_start);
+		rc = -EBUSY;
+		goto error4;
+	}
+
 	// remap buffer
 	lp->buffer_base_addr = ioremap(lp->buffer_mem_start, lp->buffer_mem_end - lp->buffer_mem_start + 1);
 	if (!lp->buffer_base_addr) {
 		dev_err(dev, "daqdrv: Could not allocate iomem for buffer\n");
 		rc = -EIO;
-		goto error4;
+		goto error5;
 	}
 
 	// remap ctrl
@@ -322,7 +447,7 @@ static int daqdrv_probe(struct platform_device *pdev)
 	if (!lp->ctrl_base_addr) {
 		dev_err(dev, "daqdrv: Could not allocate iomem for ctrl\n");
 		rc = -EIO;
-		goto error5;
+		goto error6;
 	}
 
 	// remap stat
@@ -330,7 +455,15 @@ static int daqdrv_probe(struct platform_device *pdev)
 	if (!lp->stat_base_addr) {
 		dev_err(dev, "daqdrv: Could not allocate iomem for stat\n");
 		rc = -EIO;
-		goto error6;
+		goto error7;
+	}
+
+	// remap clk
+	lp->clk_base_addr = ioremap(lp->clk_mem_start, lp->clk_mem_end - lp->clk_mem_start + 1);
+	if (!lp->clk_base_addr) {
+		dev_err(dev, "daqdrv: Could not allocate iomem for clk\n");
+		rc = -EIO;
+		goto error8;
 	}
 
 	// allocate character device 
@@ -338,7 +471,7 @@ static int daqdrv_probe(struct platform_device *pdev)
 	if (ret_alloc_chardev) {
 		dev_err(dev, "Allocating char device failed with %d\n", ret_alloc_chardev);
 		rc = ret_alloc_chardev;
-		goto error7;
+		goto error9;
 	}
 
 	// register character device
@@ -348,7 +481,7 @@ static int daqdrv_probe(struct platform_device *pdev)
 	if (ret_cdev_add) {
 		dev_err(dev, "Registering char device failed with %d\n", ret_cdev_add);
 		rc = ret_cdev_add;
-		goto error8;
+		goto error10;
 	}
 
 	// Create device file
@@ -362,7 +495,23 @@ static int daqdrv_probe(struct platform_device *pdev)
 	if (ret_fifo_alloc) {
 		dev_err(dev, "Allocating fifo failed with %d\n", ret_fifo_alloc);
 		rc = ret_fifo_alloc;
-		goto error9;
+		goto error11;
+	}
+
+	// create sysfs files
+	kobject_init(&(lp->sampleRate_module_object), &dynamic_kobj_ktype);
+	int ret_kobject_add = kobject_add(&(lp->sampleRate_module_object), kernel_kobj, "%s", DRIVER_NAME);
+	if (ret_kobject_add) {
+		dev_err(dev, "kobject_add error: %d\n", ret_kobject_add);
+		rc = ret_kobject_add;
+		goto error12;
+	}
+
+	int ret_sysfs_create_file = sysfs_create_file(&(lp->sampleRate_module_object), &sampleRate_attribute.attr);
+	if (ret_sysfs_create_file) {
+		dev_err(dev, "Sysfs file creation failed with %d.\n", ret_sysfs_create_file);
+		rc = ret_sysfs_create_file;
+		goto error13;
 	}
 
 	// get interrupt
@@ -378,6 +527,9 @@ static int daqdrv_probe(struct platform_device *pdev)
 		dev_info(dev, "daqdrv stat at 0x%08x mapped to 0x%08x\n",
 			(unsigned int __force)lp->stat_mem_start,
 			(unsigned int __force)lp->stat_base_addr);
+		dev_info(dev, "daqdrv clk at 0x%08x mapped to 0x%08x\n",
+			(unsigned int __force)lp->clk_mem_start,
+			(unsigned int __force)lp->clk_base_addr);
 		return 0;
 	}
 	lp->irq = n_irq;
@@ -387,7 +539,7 @@ static int daqdrv_probe(struct platform_device *pdev)
 	if (rc) {
 		dev_err(dev, "daqdrv: Could not allocate interrupt %d.\n",
 			lp->irq);
-		goto error10;
+		goto error14;
 	}
 	disable_irq(lp->irq);
 
@@ -401,22 +553,32 @@ static int daqdrv_probe(struct platform_device *pdev)
 	dev_info(dev,"daqdrv stat at 0x%08x mapped to 0x%08x",
 		(unsigned int __force)lp->stat_mem_start,
 		(unsigned int __force)lp->stat_base_addr);
+	dev_info(dev,"daqdrv clk at 0x%08x mapped to 0x%08x",
+		(unsigned int __force)lp->clk_mem_start,
+		(unsigned int __force)lp->clk_base_addr);
 	return 0;
-error10:
+error14:
 	free_irq(lp->irq, lp);
+error13:
+	kobject_put(&(lp->sampleRate_module_object));
+error12:
 	kfifo_iomod_free(&(lp->fifo));
-error9:
+error11:
 	device_destroy(cls, dvt);
 	class_destroy(cls);
 	cdev_del(&(lp->chardev));
-error8:
+error10:
 	unregister_chrdev_region(dvt, num_of_dev);
-error7:
+error9:
+	iounmap(lp->clk_base_addr);
+error8:
 	iounmap(lp->stat_base_addr);
-error6:
+error7:
 	iounmap(lp->ctrl_base_addr);
-error5:
+error6:
 	iounmap(lp->buffer_base_addr);
+error5:
+	release_mem_region(lp->clk_mem_start, lp->clk_mem_end - lp->clk_mem_start + 1);
 error4:
 	release_mem_region(lp->stat_mem_start, lp->stat_mem_end - lp->stat_mem_start + 1);
 error3:
@@ -435,6 +597,7 @@ static int daqdrv_remove(struct platform_device *pdev)
 	struct device *dev = &pdev->dev;
 	struct daqdrv_local *lp = dev_get_drvdata(dev);
 	free_irq(lp->irq, lp);
+	kobject_put(&(lp->sampleRate_module_object));
 	kfifo_iomod_free(&(lp->fifo));
 
 	device_destroy(cls, dvt);
@@ -442,9 +605,11 @@ static int daqdrv_remove(struct platform_device *pdev)
 	cdev_del(&(lp->chardev));
 	unregister_chrdev_region(dvt, num_of_dev);
 
+	iounmap(lp->clk_base_addr);
 	iounmap(lp->stat_base_addr);
 	iounmap(lp->ctrl_base_addr);
 	iounmap(lp->buffer_base_addr);
+	release_mem_region(lp->clk_mem_start, lp->clk_mem_end - lp->clk_mem_start + 1);
 	release_mem_region(lp->stat_mem_start, lp->stat_mem_end - lp->stat_mem_start + 1);
 	release_mem_region(lp->ctrl_mem_start, lp->ctrl_mem_end - lp->ctrl_mem_start + 1);
 	release_mem_region(lp->buffer_mem_start, lp->buffer_mem_end - lp->buffer_mem_start + 1);

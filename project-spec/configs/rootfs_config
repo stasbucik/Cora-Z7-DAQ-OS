@@ -3771,14 +3771,14 @@ CONFIG_Init-manager-systemd=y
 #
 # CONFIG_client-test-scripts-native is not set
 CONFIG_daqdrv=y
-CONFIG_daqsrv-tcp=y
+# CONFIG_daqsrv-tcp is not set
 CONFIG_daqsrv-udp=y
 CONFIG_daqsrv-udp-systemd-unit=y
-CONFIG_gpio-demo=y
-CONFIG_nano=y
+# CONFIG_gpio-demo is not set
+# CONFIG_nano is not set
 CONFIG_packagegroup-daq-debug-tools=y
-CONFIG_peekpoke=y
-CONFIG_test-scripts=y
+# CONFIG_peekpoke is not set
+# CONFIG_test-scripts is not set
 
 #
 # PetaLinux RootFS Settings

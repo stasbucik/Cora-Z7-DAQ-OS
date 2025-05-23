@@ -65,29 +65,27 @@
 
 void onConnect(boost::asio::ip::udp::socket &socket,
 	boost::asio::ip::udp::endpoint &remote_endpoint,
-	boost::asio::io_context &io_context,
-	boost::array<uint8_t, 1> &recv_buf);
+	boost::asio::io_context &io_context);
 
 typedef std::function<void(
 	boost::asio::ip::udp::socket &,
 	boost::asio::ip::udp::endpoint &,
-	boost::asio::io_context &,
-	boost::array<uint8_t, 1> &)> onConnectSignature;
+	boost::asio::io_context &)> onConnectSignature;
 
 static bool connected = false;
 
 void waitForConnection(boost::asio::ip::udp::socket &socket,
 	boost::asio::ip::udp::endpoint &remote_endpoint,
 	boost::asio::io_context &io_context,
-	boost::array<uint8_t, 1> &recv_buf,
 	std::shared_ptr<onConnectSignature> completion_handler_ptr)
 {
+	std::shared_ptr<boost::array<uint8_t, 2>> recv_buf_ptr = std::make_shared<boost::array<uint8_t, 2>>();
 	try {
 
 		std::cout << "Listening on : " << socket.local_endpoint() << std::endl;
 
-		socket.async_receive_from(boost::asio::buffer(recv_buf), remote_endpoint, 0,
-			[&recv_buf, completion_handler_ptr, &socket, &remote_endpoint, &io_context]
+		socket.async_receive_from(boost::asio::buffer(*recv_buf_ptr), remote_endpoint, 0,
+			[recv_buf_ptr, completion_handler_ptr, &socket, &remote_endpoint, &io_context]
 			(const boost::system::error_code &err, std::size_t bytes_transferred)
 			{
 				if (err.failed()) {
@@ -95,31 +93,65 @@ void waitForConnection(boost::asio::ip::udp::socket &socket,
 					return boost::asio::post(io_context,
 						[&]()
 						{
-							waitForConnection(socket, remote_endpoint, io_context, recv_buf, std::make_shared<onConnectSignature>(onConnect));
+							waitForConnection(socket, remote_endpoint, io_context, std::make_shared<onConnectSignature>(onConnect));
 						});
 				}
 
-				if (bytes_transferred != 1) {
-					std::cout << "Didn't receive 1 byte!" << std::endl;
+				if (bytes_transferred != 2) {
+					std::cout << "Didn't receive 2 bytes!" << std::endl;
 					return boost::asio::post(io_context,
 						[&]()
 						{
-							waitForConnection(socket, remote_endpoint, io_context, recv_buf, std::make_shared<onConnectSignature>(onConnect));
+							waitForConnection(socket, remote_endpoint, io_context, std::make_shared<onConnectSignature>(onConnect));
 						});
 				}
 
-				if (recv_buf[0] != PACKET_TYPE_CONNECT) {
+				if ((*recv_buf_ptr)[0] != PACKET_TYPE_CONNECT) {
 					std::cout << "Received packet not connect packet." << std::endl;
 					return boost::asio::post(io_context,
 						[&]()
 						{
-							waitForConnection(socket, remote_endpoint, io_context, recv_buf, std::make_shared<onConnectSignature>(onConnect));
+							waitForConnection(socket, remote_endpoint, io_context, std::make_shared<onConnectSignature>(onConnect));
 						});
 				}
 
+				std::string sample_rate = std::to_string(static_cast<uint32_t>((*recv_buf_ptr)[1]));
+
+				int fd = open("/sys/kernel/daqdrv/sampleRate", O_WRONLY);
+				if (fd == -1) {
+					std::cout << "Error occured when opening /sys/kernel/daqdrv/sampleRate: " << errno << std::endl;
+					return boost::asio::post(io_context,
+						[&]()
+						{
+							waitForConnection(socket, remote_endpoint, io_context, std::make_shared<onConnectSignature>(onConnect));
+						});
+				}
+
+				int ret_write = write(fd, sample_rate.c_str(), sample_rate.size());
+
+				if (ret_write == -1) {
+					close(fd);
+					std::cout << "Error when writing to /sys/kernel/daqdrv/sampleRate: " << errno << std::endl;
+					return boost::asio::post(io_context,
+						[&]()
+						{
+							waitForConnection(socket, remote_endpoint, io_context, std::make_shared<onConnectSignature>(onConnect));
+						});
+				} else if (ret_write == 0) {
+					close(fd);
+					std::cout << "Error when writing to /sys/kernel/daqdrv/sampleRate: nothing was written." << std::endl;
+					return boost::asio::post(io_context,
+						[&]()
+						{
+							waitForConnection(socket, remote_endpoint, io_context, std::make_shared<onConnectSignature>(onConnect));
+						});
+				}
+
+				close(fd);
+
 				std::cout << remote_endpoint << " connected." << std::endl;
 				connected = true;
-				return (*completion_handler_ptr)(socket, remote_endpoint, io_context, recv_buf);
+				return (*completion_handler_ptr)(socket, remote_endpoint, io_context);
 
 			});
 
@@ -132,13 +164,13 @@ void waitForConnection(boost::asio::ip::udp::socket &socket,
 
 void checkDisconnect(boost::asio::ip::udp::socket &socket,
 	boost::asio::ip::udp::endpoint &remote_endpoint,
-	boost::asio::io_context &io_context,
-	boost::array<uint8_t, 1> &recv_buf)
+	boost::asio::io_context &io_context)
 {
+	std::shared_ptr<boost::array<uint8_t, 1>> recv_buf_ptr = std::make_shared<boost::array<uint8_t, 1>>();
 	try {
 
-		socket.async_receive_from(boost::asio::buffer(recv_buf), remote_endpoint, 0,
-			[&recv_buf, &socket, &remote_endpoint, &io_context]
+		socket.async_receive_from(boost::asio::buffer(*recv_buf_ptr), remote_endpoint, 0,
+			[recv_buf_ptr, &socket, &remote_endpoint, &io_context]
 			(const boost::system::error_code &err, std::size_t bytes_transferred)
 			{
 				if (err.failed()) {
@@ -151,7 +183,7 @@ void checkDisconnect(boost::asio::ip::udp::socket &socket,
 					return;
 				}
 
-				if (recv_buf[0] != PACKET_TYPE_DISCONNECT) {
+				if ((*recv_buf_ptr)[0] != PACKET_TYPE_DISCONNECT) {
 					std::cout << "Received packet not disconnect packet." << std::endl;
 					return;
 				}
@@ -250,8 +282,7 @@ void sendData(
 
 void onConnect(boost::asio::ip::udp::socket &socket,
 	boost::asio::ip::udp::endpoint &remote_endpoint,
-	boost::asio::io_context &io_context,
-	boost::array<uint8_t, 1> &recv_buf)
+	boost::asio::io_context &io_context)
 {
 	int fd = open("/dev/daqdrv", O_RDONLY);
 	if (fd == -1) {
@@ -259,16 +290,16 @@ void onConnect(boost::asio::ip::udp::socket &socket,
 		return;
 	}
 
-	checkDisconnect(socket, remote_endpoint, io_context, recv_buf);
+	checkDisconnect(socket, remote_endpoint, io_context);
 
 	sendData(socket, remote_endpoint, io_context, fd, 0, std::make_shared<std::function<void(void)>>(
-		[fd, &socket, &remote_endpoint, &recv_buf, &io_context]()
+		[fd, &socket, &remote_endpoint, &io_context]()
 		{
 			close(fd);
 			boost::asio::post(io_context,
 				[&]()
 				{
-					waitForConnection(socket, remote_endpoint, io_context, recv_buf, std::make_shared<onConnectSignature>(onConnect));
+					waitForConnection(socket, remote_endpoint, io_context, std::make_shared<onConnectSignature>(onConnect));
 				});
 		}),
 		std::make_shared<std::function<void(void)>>(
@@ -295,10 +326,7 @@ int main(int argc, char *argv[])
 		udp::socket socket(io_context, udp::endpoint(udp::v4(), port));
 		udp::endpoint remote_endpoint;
 
-		boost::array<uint8_t, 1> recv_buf;
-
-
-		waitForConnection(socket, remote_endpoint, io_context, recv_buf, std::make_shared<onConnectSignature>(onConnect));
+		waitForConnection(socket, remote_endpoint, io_context, std::make_shared<onConnectSignature>(onConnect));
 
 		io_context.run();
 		socket.close();

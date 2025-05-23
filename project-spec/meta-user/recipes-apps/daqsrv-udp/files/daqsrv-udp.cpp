@@ -41,6 +41,7 @@
 #include <fcntl.h>
 #include <errno.h>
 #include <unistd.h>
+#include <poll.h>
 
 #include <boost/asio.hpp>
 #include <boost/array.hpp>
@@ -181,31 +182,34 @@ void sendData(
 	}
 
 	uint8_t packet_buffer[PACKET_SIZE];
-	ssize_t dataRead = 0;
-	uint32_t retryCount = 0;
+	struct pollfd pfd;
 
-	while (true) {
+	pfd.fd = driver_fd;
+	pfd.events = POLLIN | POLLRDNORM;
 
-		dataRead = read(driver_fd, packet_buffer + PACKET_OFFSET_DATA, PACKET_SIZE_DATA);
+	int poll_retval = poll(&pfd, 1, 1000);
 
-		if (dataRead == -1) {
-			if (errno != EAGAIN) {
-				std::cout << "Error occured when reading /dev/daqdrv: " << errno << std::endl;
-				return (*on_error_handler_ptr)();
-			} else {
-				retryCount++;
-	
-				if (retryCount == MAX_RETRY) {
-					std::cout << MAX_RETRY << " consecutive attempts to read failed, exiting." << std::endl;
-					return (*on_error_handler_ptr)();
-				} else {
-					std::this_thread::sleep_for(
-						std::chrono::microseconds(200));
-				}
-			}
-		} else if (dataRead > 0) {
-			break;
-		}
+	if (poll_retval < 0) {
+		std::cout << "Error occured when polling /dev/daqdrv: " << errno << std::endl;
+		return (*on_error_handler_ptr)();
+	} else if (poll_retval == 0) {
+		std::cout << "Polling /dev/daqdrv timed out." << std::endl;
+		return (*on_error_handler_ptr)();
+	}
+
+	if ((pfd.revents & POLLIN) != POLLIN) {
+		std::cout << "Polling /dev/daqdrv returned flags " << pfd.revents << std::endl;
+		return (*on_error_handler_ptr)();
+	}
+
+	ssize_t read_retval = read(driver_fd, packet_buffer + PACKET_OFFSET_DATA, PACKET_SIZE_DATA);
+
+	if (read_retval == -1) {
+		std::cout << "Error occured when reading /dev/daqdrv: " << errno << std::endl;
+		return (*on_error_handler_ptr)();
+	} else if (read_retval == 0) {
+		std::cout << "Reading /dev/daqdrv returned no data." << std::endl;
+		return (*on_error_handler_ptr)();
 	}
 
 	try {

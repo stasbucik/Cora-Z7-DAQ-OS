@@ -3769,6 +3769,7 @@ CONFIG_Init-manager-systemd=y
 #
 # user packages 
 #
+# CONFIG_client-test-scripts-native is not set
 CONFIG_daqdrv=y
 CONFIG_daqsrv-tcp=y
 CONFIG_daqsrv-udp=y

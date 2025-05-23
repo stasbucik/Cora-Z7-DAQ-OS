@@ -12,3 +12,4 @@ CONFIG_daqsrv-tcp
 
 CONFIG_packagegroup-daq-debug-tools
 CONFIG_daqsrv-udp-systemd-unit
+CONFIG_client-test-scripts-native

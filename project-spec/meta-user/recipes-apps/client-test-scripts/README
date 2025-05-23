@@ -1,0 +1,9 @@
+Download matplotlibcpp.h from
+https://github.com/Cryoris/matplotlib-cpp
+or
+https://github.com/lava/matplotlib-cpp
+
+To build this outside the petalinux environment use:
+g++ -std=c++11 -I /usr/include/python3.13 -I /usr/lib/python3.13/site-packages/numpy/_core/include -lpython3.13 recv-udp.cpp -o recv-udp
+
+make sure you have python and numpy, change the command to whatever version you have. Numpy include path might differ depending on your OS.

@@ -142,11 +142,7 @@ void checkDisconnect(boost::asio::ip::udp::socket &socket,
 			{
 				if (err.failed()) {
 					std::cout << "Error occured when reading from socket: " << err.to_string() << std::endl;
-					return boost::asio::post(io_context,
-						[&]()
-						{
-							waitForConnection(socket, remote_endpoint, io_context, recv_buf, std::make_shared<onConnectSignature>(onConnect));
-						});
+					return;
 				}
 
 				if (bytes_transferred != 1) {
@@ -174,9 +170,11 @@ void checkDisconnect(boost::asio::ip::udp::socket &socket,
 void sendData(
 	boost::asio::ip::udp::socket &socket,
 	boost::asio::ip::udp::endpoint &remote_endpoint,
+	boost::asio::io_context &io_context,
 	int driver_fd,
 	uint16_t packetCounter,
-	std::shared_ptr<std::function<void(void)>> on_disconnect_handler_ptr)
+	std::shared_ptr<std::function<void(void)>> on_disconnect_handler_ptr,
+	std::shared_ptr<std::function<void(void)>> on_error_handler_ptr)
 {
 	if (!connected) {
 		return (*on_disconnect_handler_ptr)();
@@ -193,13 +191,13 @@ void sendData(
 		if (dataRead == -1) {
 			if (errno != EAGAIN) {
 				std::cout << "Error occured when reading /dev/daqdrv: " << errno << std::endl;
-				return;
+				return (*on_error_handler_ptr)();
 			} else {
 				retryCount++;
 	
 				if (retryCount == MAX_RETRY) {
 					std::cout << MAX_RETRY << " consecutive attempts to read failed, exiting." << std::endl;
-					return;
+					return (*on_error_handler_ptr)();
 				} else {
 					std::this_thread::sleep_for(
 						std::chrono::microseconds(200));
@@ -219,26 +217,30 @@ void sendData(
 
 		boost::system::error_code err;	
 		socket.async_send_to(boost::asio::buffer(packet_buffer, PACKET_SIZE), remote_endpoint, 0,
-			[&socket, &remote_endpoint, driver_fd, packetCounter, on_disconnect_handler_ptr]
+			[&socket, &remote_endpoint, &io_context, driver_fd, packetCounter, on_disconnect_handler_ptr, on_error_handler_ptr]
 			(const boost::system::error_code &err, std::size_t bytes_transferred)
 			{
 				if (err.failed()) {
 					std::cout << "Error occured when writing to socket: " << err.to_string() << std::endl;
-					return;
+					return (*on_error_handler_ptr)();
 				}
 
 				if (bytes_transferred != PACKET_SIZE) {
 					std::cout << "Didn't send full packet: " << bytes_transferred << std::endl;
-					return;
+					return (*on_error_handler_ptr)();
 				}
 
-				sendData(socket, remote_endpoint, driver_fd, packetCounter+1, on_disconnect_handler_ptr);
+				boost::asio::post(io_context,
+					[&socket, &remote_endpoint, &io_context, driver_fd, packetCounter, on_disconnect_handler_ptr, on_error_handler_ptr]()
+					{
+						sendData(socket, remote_endpoint, io_context, driver_fd, packetCounter+1, on_disconnect_handler_ptr, on_error_handler_ptr);
+					});
 			});
 	
 	} catch (...) {
 		std::cout << "Error on socket send" << std::endl;
 		std::cout << boost::current_exception_diagnostic_information() << std::endl;
-		return;
+		return (*on_error_handler_ptr)();
 	}
 }
 
@@ -255,7 +257,7 @@ void onConnect(boost::asio::ip::udp::socket &socket,
 
 	checkDisconnect(socket, remote_endpoint, io_context, recv_buf);
 
-	sendData(socket, remote_endpoint, fd, 0, std::make_shared<std::function<void(void)>>(
+	sendData(socket, remote_endpoint, io_context, fd, 0, std::make_shared<std::function<void(void)>>(
 		[fd, &socket, &remote_endpoint, &recv_buf, &io_context]()
 		{
 			close(fd);
@@ -264,6 +266,11 @@ void onConnect(boost::asio::ip::udp::socket &socket,
 				{
 					waitForConnection(socket, remote_endpoint, io_context, recv_buf, std::make_shared<onConnectSignature>(onConnect));
 				});
+		}),
+		std::make_shared<std::function<void(void)>>(
+		[fd]()
+		{
+			close(fd);
 		}));
 }
 

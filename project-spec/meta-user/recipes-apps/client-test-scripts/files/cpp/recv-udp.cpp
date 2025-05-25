@@ -208,9 +208,6 @@ int main(int argc, char *argv[])
 
 	try {
 		run_ptr = std::make_shared<bool>(true);
-		iocontext_ptr = std::make_shared<boost::asio::io_context>();
-
-		socket_ptr = std::make_shared<udp::socket>(*iocontext_ptr);
 
 		int sample_rate = std::stoi(std::string(argv[1]));
 		if (sample_rate < 0 || sample_rate > 3) {
@@ -229,6 +226,9 @@ int main(int argc, char *argv[])
 			*real_sample_rate_ptr = 2e6;
 		}
 
+		iocontext_ptr = std::make_shared<boost::asio::io_context>();
+		socket_ptr = std::make_shared<udp::socket>(*iocontext_ptr);
+
 		udp::endpoint server_endpoint(
 			boost::asio::ip::make_address(std::string(argv[2])),
 			std::stoi(std::string(argv[3])));
@@ -238,6 +238,25 @@ int main(int argc, char *argv[])
 		recvbuf_ptr = std::make_shared<boost::array<uint8_t, 259>>();
 
 		socket_ptr->connect(server_endpoint);
+		
+		boost::asio::socket_base::receive_buffer_size buff_size_option(0x8000000); // 128MiB
+		boost::system::error_code er;
+		socket_ptr->set_option(buff_size_option, er);
+		if (er.failed()) {
+			std::cout << er << std::endl;
+			std::cout << "Unable to set the receive buffer to 128MiB." << std::endl;
+
+			buff_size_option = 0;
+			socket_ptr->set_option(buff_size_option, er);
+
+			if (er.failed()) {
+				std::cout << er << std::endl;
+				std::cout << "Unable to get the receive buffer size." << std::endl;
+			} else {
+				std::cout << "Buffer size: " << buff_size_option.value() << std::endl;
+			}
+			std::cout << "Might experience packet loss." << std::endl;
+		}
 
 		uint8_t send_buffer[2] = { 0, static_cast<uint8_t>(sample_rate) };
 

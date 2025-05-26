@@ -7,6 +7,9 @@ M_AXI_ctrl:
 M_AXI_stat:
 - M_AXI_stat
 - None
+clk_wiz_0:
+- clk_wiz
+- clk_wiz
 ps7_afi_0:
 - ps7_afi
 - None
@@ -46,9 +49,6 @@ ps7_gpio_0:
 ps7_gpv_0:
 - ps7_gpv
 - None
-ps7_i2c_0:
-- ps7_i2c
-- iicps
 ps7_intc_dist_0:
 - ps7_intc_dist
 - scugic
@@ -79,9 +79,6 @@ ps7_sd_0:
 ps7_slcr_0:
 - ps7_slcr
 - None
-ps7_spi_0:
-- ps7_spi
-- spips
 ps7_uart_0:
 - ps7_uart
 - uartps

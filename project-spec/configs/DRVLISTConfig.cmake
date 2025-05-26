@@ -1,1 +1,1 @@
-set(DRIVER_LIST common;coresightps_dcc;devcfg;dmaps;emacps;gpiops;iicps;scugic;scutimer;scuwdt;sdps;spips;uartps;usbps;xadcps)
+set(DRIVER_LIST clk_wiz;common;coresightps_dcc;devcfg;dmaps;emacps;gpiops;scugic;scutimer;scuwdt;sdps;uartps;usbps;xadcps)

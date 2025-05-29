@@ -4,7 +4,7 @@
 		compatible = "simple-bus";
 		#address-cells = <1>;
 		#size-cells = <1>;
-		firmware-name = "CoraZ707S-0x000000100-20250528140515-matterhorn-d759a55.bit.bin";
+		firmware-name = "CoraZ707S-0x000000100-20250529122439-matterhorn-dirty.bit.bin";
 		clocking0: clocking0 {
 			compatible = "xlnx,fclk";
 			assigned-clocks = <&clkc 15>;

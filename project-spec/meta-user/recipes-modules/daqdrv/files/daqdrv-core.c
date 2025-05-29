@@ -33,6 +33,7 @@ MODULE_DESCRIPTION
 
 #define ADC_RUN_BIT 0
 #define DAC_RUN_BIT 1
+#define CLEAR_BIT_C 2
 
 #define OVERWRITE_BIT 0
 
@@ -234,6 +235,12 @@ static int daqdrv_open(struct inode *inode, struct file *file)
 		return -ENOTRECOVERABLE;
 	}
 
+	u32 ctrl_reg = ioread32(lp->ctrl_base_addr);
+	REG_SET_BIT(ctrl_reg, CLEAR_BIT_C);
+	iowrite32(ctrl_reg, lp->ctrl_base_addr);
+	REG_UNSET_BIT(ctrl_reg, CLEAR_BIT_C);
+	iowrite32(ctrl_reg, lp->ctrl_base_addr);
+
 	kfifo_iomod_reset_out(&(lp->fifo));
 	lp->overflowing = false;
 	lp->prev_overflowing = false;
@@ -241,7 +248,6 @@ static int daqdrv_open(struct inode *inode, struct file *file)
 	lp->allowed_to_read = true;
 	enable_irq(lp->irq);
 	
-	u32 ctrl_reg = ioread32(lp->ctrl_base_addr);
 	REG_SET_BIT(ctrl_reg, ADC_RUN_BIT);
 	REG_SET_BIT(ctrl_reg, DAC_RUN_BIT);
 	iowrite32(ctrl_reg, lp->ctrl_base_addr);
@@ -268,10 +274,6 @@ static int daqdrv_release(struct inode *inode, struct file *file)
 	REG_UNSET_BIT(ctrl_reg, ADC_RUN_BIT);
 	REG_UNSET_BIT(ctrl_reg, DAC_RUN_BIT);
 	iowrite32(ctrl_reg, lp->ctrl_base_addr);
-
-	kfifo_iomod_reset_out(&(lp->fifo));
-	lp->overflowing = false;
-	lp->prev_overflowing = false;
 
 	atomic_set(&already_open, CDEV_NOT_USED);
 	module_put(THIS_MODULE);

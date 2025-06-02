@@ -105,10 +105,14 @@ void recvData(uint16_t packet_cntr)
 				uint8_t packet_type = recvbuf_ptr->at(0);
     			uint16_t recv_packet_cntr = (recvbuf_ptr->at(2) << 8) | recvbuf_ptr->at(1);
 
-    			uint16_t new_packet_cntr = packet_cntr + 1;
+    			uint16_t new_packet_cntr = 0;
     			if (packet_cntr != recv_packet_cntr) {
     				invalid_ptr->emplace(std::make_pair(data_ptr->size(), recv_packet_cntr - packet_cntr));
-    				new_packet_cntr = recv_packet_cntr + 1;
+    				if (recv_packet_cntr != 0xffff) {
+	    				new_packet_cntr = recv_packet_cntr + 1;
+	    			}
+    			} else if (packet_cntr != 0xffff) {
+    				new_packet_cntr = packet_cntr + 1;
     			}
 
     			data_ptr->insert(std::end(*data_ptr), std::begin(*recvbuf_ptr) + 3, std::end(*recvbuf_ptr));

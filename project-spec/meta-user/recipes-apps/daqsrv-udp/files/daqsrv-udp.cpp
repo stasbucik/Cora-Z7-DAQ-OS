@@ -237,7 +237,11 @@ void sendData(
 				boost::asio::post(io_context,
 					[&socket, &remote_endpoint, &io_context, driver_fd, packetCounter, on_disconnect_handler_ptr, on_error_handler_ptr]()
 					{
-						sendData(socket, remote_endpoint, io_context, driver_fd, packetCounter+1, on_disconnect_handler_ptr, on_error_handler_ptr);
+						uint16_t newPacketCounter = 0;
+						if (packetCounter != 0xffff) {
+							newPacketCounter = packetCounter + 1;
+						}
+						sendData(socket, remote_endpoint, io_context, driver_fd, newPacketCounter, on_disconnect_handler_ptr, on_error_handler_ptr);
 					});
 			});
 	

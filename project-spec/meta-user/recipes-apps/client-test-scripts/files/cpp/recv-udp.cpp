@@ -91,6 +91,7 @@ void showData()
 	matplotlibcpp::figure();
 	matplotlibcpp::plot(time_samples, samples);
 	matplotlibcpp::show();
+	matplotlibcpp::detail::_interpreter::kill();
 }
 
 void recvData(uint16_t packet_cntr)

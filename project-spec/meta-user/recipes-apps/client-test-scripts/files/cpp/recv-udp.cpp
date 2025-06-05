@@ -108,7 +108,16 @@ void recvData(uint16_t packet_cntr)
 
     			uint16_t new_packet_cntr = 0;
     			if (packet_cntr != recv_packet_cntr) {
-    				invalid_ptr->emplace(std::make_pair(data_ptr->size(), recv_packet_cntr - packet_cntr));
+
+    				uint16_t packet_diff = 0;
+    				if (packet_cntr > recv_packet_cntr) {
+    					packet_diff = packet_cntr - recv_packet_cntr - 1;
+    					packet_diff = 0xffff - packet_diff;
+    				} else {
+    					packet_diff = recv_packet_cntr - packet_cntr;
+    				}
+    				invalid_ptr->emplace(std::make_pair(data_ptr->size(), packet_diff));
+
     				if (recv_packet_cntr != 0xffff) {
 	    				new_packet_cntr = recv_packet_cntr + 1;
 	    			}

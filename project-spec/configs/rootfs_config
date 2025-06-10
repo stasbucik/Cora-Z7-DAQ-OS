@@ -3760,7 +3760,7 @@ CONFIG_u-boot-tools=y
 # CONFIG_imagefeature-ssh-server-openssh is not set
 CONFIG_imagefeature-hwcodecs=y
 # CONFIG_imagefeature-package-management is not set
-# CONFIG_imagefeature-debug-tweaks is not set
+CONFIG_imagefeature-debug-tweaks=y
 # CONFIG_imagefeature-empty-root-password is not set
 # CONFIG_imagefeature-serial-autologin-root is not set
 CONFIG_Init-manager-systemd=y
@@ -3775,7 +3775,7 @@ CONFIG_daqdrv=y
 CONFIG_daqsrv-udp=y
 CONFIG_daqsrv-udp-systemd-unit=y
 # CONFIG_gpio-demo is not set
-CONFIG_packagegroup-daq-debug-tools=y
+# CONFIG_packagegroup-daq-debug-tools is not set
 # CONFIG_peekpoke is not set
 # CONFIG_test-scripts is not set
 

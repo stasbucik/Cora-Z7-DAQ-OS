@@ -3,7 +3,7 @@ Description=DAQ UDP server
 After=network.target
 
 [Service]
-ExecStart=/usr/bin/daqsrv-udp 44444
+ExecStart=/usr/bin/nice -n -10 /usr/bin/daqsrv-udp 44444
 Type=simple
 Restart=always
 

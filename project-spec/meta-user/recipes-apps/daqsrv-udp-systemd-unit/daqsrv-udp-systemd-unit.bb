@@ -7,7 +7,7 @@ inherit systemd
 inherit features_check
 REQUIRED_DISTRO_FEATURES = "systemd"
 
-RDEPENDS:${PN} += "daqsrv-udp "
+RDEPENDS:${PN} += "daqsrv-udp coreutils "
 
 SRC_URI = "file://daqsrv-udp.service"
 

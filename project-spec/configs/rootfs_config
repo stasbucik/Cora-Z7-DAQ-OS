@@ -2947,7 +2947,7 @@ CONFIG_packagegroup-core-boot=y
 #
 # tcf-agent 
 #
-CONFIG_tcf-agent=y
+# CONFIG_tcf-agent is not set
 # CONFIG_tcf-agent-dbg is not set
 # CONFIG_tcf-agent-dev is not set
 

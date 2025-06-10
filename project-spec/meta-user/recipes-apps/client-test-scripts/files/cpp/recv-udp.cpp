@@ -90,6 +90,9 @@ void showData()
 
 	matplotlibcpp::figure();
 	matplotlibcpp::plot(time_samples, samples);
+	matplotlibcpp::title("Acquired samples");
+	matplotlibcpp::xlabel("Time / s");
+	matplotlibcpp::ylabel("Sample / LSB");
 	matplotlibcpp::show();
 	matplotlibcpp::detail::_interpreter::kill();
 }

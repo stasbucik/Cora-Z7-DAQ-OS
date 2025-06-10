@@ -202,7 +202,7 @@ static irqreturn_t daqdrv_irq(int irq, void *lp)
 	}
 
 	if (lpp->overflowing == true && lpp->prev_overflowing == false) {
-		printk("Started overflowwing! Dropping data, no space in fifo.\n");
+		printk("Started overflowing! Dropping data, no space in fifo.\n");
 	}
 
 	if (lpp->overflowing == false && lpp->prev_overflowing == true) {

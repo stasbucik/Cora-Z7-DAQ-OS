@@ -92,7 +92,7 @@ void showData()
 	matplotlibcpp::plot(time_samples, samples);
 	matplotlibcpp::title("Acquired samples");
 	matplotlibcpp::xlabel("Time / s");
-	matplotlibcpp::ylabel("Sample / LSB");
+	matplotlibcpp::ylabel("Samples / LSB");
 	matplotlibcpp::show();
 	matplotlibcpp::detail::_interpreter::kill();
 }

@@ -117,4 +117,7 @@ sample_time = 1.0/real_sample_rate
 time_samples = [i*sample_time for i in range(len(samples))]
 
 plt.plot(time_samples, samples)
+plt.title("Acquired samples")
+plt.xlabel("Time / s")
+plt.ylabel("Samples / LSB")
 plt.show()

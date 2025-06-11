@@ -61,7 +61,6 @@ client_socket.settimeout(3.0)
 client_socket.sendto(b''.join([b'\x00', sample_rate.to_bytes(1, 'big')]), (srv_address, port))
 
 alldataArray = []
-alldata = bytes()
 
 try:
     packet_cntr = 0
@@ -71,12 +70,10 @@ try:
         recv_packet_cntr = (data[2] << 8) | data[1]
         
         if (recv_packet_cntr == packet_cntr):
-            alldata = alldata + data[3:]
-
+            alldataArray.append(data[3:])
             packet_cntr = inc(packet_cntr)
         else:
             #print(f'expected {packet_cntr}, got {recv_packet_cntr}')
-            alldataArray.append(alldata)
             alldataArray.append({'invalid': diffPacketCntr(recv_packet_cntr, packet_cntr)})
             alldata = bytes()
 

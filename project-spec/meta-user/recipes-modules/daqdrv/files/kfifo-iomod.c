@@ -3,6 +3,7 @@
  * A generic kernel FIFO implementation
  *
  * Copyright (C) 2009/2010 Stefani Seibold <stefani@seibold.net>
+ * Copyright 2025, University of Ljubljana
  */
 
 #include <linux/kernel.h>

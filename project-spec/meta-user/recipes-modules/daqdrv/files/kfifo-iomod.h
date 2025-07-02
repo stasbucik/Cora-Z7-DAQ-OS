@@ -3,6 +3,7 @@
  * A generic kernel FIFO implementation
  *
  * Copyright (C) 2013 Stefani Seibold <stefani@seibold.net>
+ * Copyright 2025, University of Ljubljana
  */
 
 #ifndef _LINUX_KFIFO_IOMOD_H
